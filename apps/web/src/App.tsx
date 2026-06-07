@@ -34,6 +34,12 @@ interface ExplorationPayload {
   context: string;
 }
 
+interface ActionPayload {
+  action_type: "exploration" | "skill_check" | "npc_interaction" | "other";
+  text: string;
+  actor_name: string;
+}
+
 function App() {
   // Authentication State
   const [token, setToken] = useState<string | null>(localStorage.getItem("dnd_token"));
@@ -380,6 +386,21 @@ function App() {
     setChatMessage("");
   };
 
+  const submitPlayerAction = () => {
+    if (!chatMessage.trim() || !ws || !myCharacter) return;
+
+    ws.send(
+      JSON.stringify({
+        type: "ACTION_SUBMIT",
+        payload: {
+          type: "exploration",
+          text: chatMessage,
+        },
+      })
+    );
+    setChatMessage("");
+  };
+
   const rollAttribute = (attrName: string, score: number) => {
     if (!ws || !myCharacter) return;
     
@@ -562,23 +583,28 @@ function App() {
                 }
 
                 if (log.type === "exploration") {
-                  const rollPayload = log.payload as ExplorationPayload;
+                  const payload = log.payload as Partial<ExplorationPayload & ActionPayload>;
+                  const isDiceRoll = Boolean(payload.dice_type);
                   return (
                     <div key={log.id} className="chat-event-card exploration">
                       <div className="event-header">
-                        <span className="event-sender">{log.actor_name || rollPayload.roller_name || "Player"}</span>
+                        <span className="event-sender">{log.actor_name || payload.roller_name || payload.actor_name || "Player"}</span>
                         <span>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
-                      <div className="event-text">
-                        Rolled a skill check: <span style={{ color: "var(--accent-gold)", fontWeight: "bold" }}>{rollPayload.context}</span>
-                        <div className="dice-bubble-container">
-                          <div className="dice-icon-roll">d{rollPayload.dice_type.substring(1)}</div>
-                          <div className="dice-details">
-                            Roll: {rollPayload.raw} | Mod: {rollPayload.modifier >= 0 ? `+${rollPayload.modifier}` : rollPayload.modifier}
+                      {isDiceRoll ? (
+                        <div className="event-text">
+                          Rolled a skill check: <span style={{ color: "var(--accent-gold)", fontWeight: "bold" }}>{payload.context}</span>
+                          <div className="dice-bubble-container">
+                            <div className="dice-icon-roll">d{payload.dice_type?.substring(1)}</div>
+                            <div className="dice-details">
+                              Roll: {payload.raw} | Mod: {(payload.modifier || 0) >= 0 ? `+${payload.modifier || 0}` : payload.modifier}
+                            </div>
+                            <div className="dice-total">{payload.final}</div>
                           </div>
-                          <div className="dice-total">{rollPayload.final}</div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="event-text">{payload.text}</div>
+                      )}
                     </div>
                   );
                 }
@@ -600,6 +626,11 @@ function App() {
               <button type="submit" className="btn btn-primary">
                 Send
               </button>
+              {myCharacter && (
+                <button type="button" className="btn btn-gold" onClick={submitPlayerAction}>
+                  Act
+                </button>
+              )}
             </form>
           </main>
 

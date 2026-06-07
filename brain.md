@@ -30,7 +30,12 @@ Last updated: 2026-06-07
   - Built React/Vite/TS web application supporting registration/login, lobby campaign management, custom character creator, real-time log, attributes d20 rolling, and quick dice rollers.
   - Developed a cryptographically secure server-side dice engine (`diceEngine.ts`) utilizing `crypto.randomInt`.
   - Implemented a complete DicePanel UI on both DM and player screens featuring rolling buttons for all standard dice types (`d4`, `d6`, `d8`, `d10`, `d12`, `d20`, `d100`) and a customizable numeric modifier input.
-  - Verified compilation build and lint checks pass cleanly across the monorepo workspace.
+  - Hardened WebSocket campaign joins/reconnects so same-socket rejoins refresh character mapping without closing the live connection.
+  - Added WebSocket recent event replay: joining/reconnecting clients receive the last 50 persisted campaign events.
+  - Added authoritative `ACTION_SUBMIT` handling through `actionProcessor.ts`, including membership/character validation, `event_log` persistence, and room broadcast.
+  - Completed campaign member/event REST endpoints: `GET /api/campaigns/:id/members` and `GET /api/campaigns/:id/events`.
+  - Updated campaign detail responses to include members, made campaign join idempotent for existing members, and fixed character campaign route ordering.
+  - Verified server/web TypeScript with no-emit checks and lint checks pass cleanly; full emit build is currently blocked locally by generated-output permission errors in `dist`, `node_modules/.tmp`, and Turbo logs.
 
 ---
 
@@ -542,12 +547,12 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Add modifier input to dice panel (+/- value before roll)
 
 #### Action processor
-- [ ] Build `actionProcessor.ts` — receives raw action text, classifies it
-- [ ] Add `ACTION_SUBMIT` WebSocket handler
-- [ ] Validate action: is it the player's character? Are they in the campaign?
+- [x] Build `actionProcessor.ts` — receives raw action text, classifies it
+- [x] Add `ACTION_SUBMIT` WebSocket handler
+- [x] Validate action: is it the player's character? Are they in the campaign?
 - [ ] Dispatch to correct subsystem (exploration, skill check, interact)
-- [ ] Write result to `event_log`
-- [ ] Broadcast `GAME_EVENT` to room
+- [x] Write result to `event_log`
+- [x] Broadcast `GAME_EVENT` to room
 
 #### World system
 - [ ] Seed starting world: 3 locations (town, dungeon entrance, wilderness)
@@ -582,9 +587,9 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Character sheet updates live via `GAME_EVENT` broadcast
 
 #### Event log UI
-- [ ] Build scrolling event log — shows all game events in chronological order
-- [ ] Colour-code by event type: combat (red), quest (gold), chat (white), system (grey)
-- [ ] Load last 50 events on join (catch-up for reconnects)
+- [x] Build scrolling event log — shows all game events in chronological order
+- [x] Colour-code by event type: combat (red), quest (gold), chat (white), system (grey)
+- [x] Load last 50 events on join (catch-up for reconnects)
 
 **Phase 2 done when:** Players can move between locations, roll dice with modifiers, pick up items, equip gear, see quests in a log, and all of it persists across page reloads.
 
@@ -692,18 +697,18 @@ POST   /api/campaigns                    # create campaign
 GET    /api/campaigns                    # list campaigns user belongs to
 POST   /api/campaigns/join               # join via invite code
 GET    /api/campaigns/:id                # get campaign details
+GET    /api/campaigns/:id/members        # list campaign members and linked characters
+GET    /api/campaigns/:id/events         # recent event log catch-up
 
 POST   /api/characters                   # create character
 GET    /api/characters/:id               # retrieve character details
 GET    /api/characters/campaign/:campaignId # list campaign characters
 
 // === Planned REST Endpoints (Phase 2 & 3) ===
-GET    /api/campaigns/:id/members
 PATCH  /api/characters/:id               # server-only mutations
 
 GET    /api/campaigns/:id/quests
 GET    /api/campaigns/:id/quests/:questId
-GET    /api/campaigns/:id/events         # event log
 GET    /api/campaigns/:id/world          # locations, factions, NPCs
 ```
 
@@ -748,4 +753,4 @@ VITE_SUPABASE_ANON_KEY=...
 
 ---
 
-*brain.md — last updated: pre-implementation final draft*
+*brain.md — last updated: 2026-06-07 websocket/campaign/action update*

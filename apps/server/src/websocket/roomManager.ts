@@ -42,11 +42,12 @@ export class RoomManager {
       campaignId,
     };
 
-    // If there's an existing connection for this user in this room, disconnect it first
+    // If there's an existing connection for this user in this room, disconnect it first.
+    // Rejoining on the same socket is allowed so character_id can be refreshed.
     const existing = room.get(userId);
-    if (existing) {
+    if (existing && existing.ws !== ws) {
       try {
-        existing.ws.close(1000, "Superceded by new connection");
+        existing.ws.close(1000, "Superseded by new connection");
       } catch {
         // Ignore close errors
       }

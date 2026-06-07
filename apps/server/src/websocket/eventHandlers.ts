@@ -4,6 +4,7 @@ import { ClientWSMessage, ClientMessageType, Character } from "@dnd/shared";
 import { RoomManager } from "./roomManager";
 import { pool } from "../db/client";
 import { rollDice } from "../game/diceEngine";
+import { processPlayerAction } from "../game/actionProcessor";
 
 export interface DecodedToken {
   sub: string;
@@ -32,6 +33,29 @@ export function authenticateSocket(token: string): { userId: string; username: s
   }
 }
 
+async function sendRecentEvents(ws: WebSocket, campaignId: string): Promise<void> {
+  const eventsRes = await pool.query(
+    `SELECT e.id, e.type, e.payload, e.created_at, COALESCE(c.name, u.username) AS actor_name
+     FROM public.event_log e
+     LEFT JOIN public.characters c ON c.id = e.actor_id
+     LEFT JOIN public.users u ON u.id = c.user_id
+     WHERE e.campaign_id = $1
+     ORDER BY e.created_at DESC
+     LIMIT 50`,
+    [campaignId]
+  );
+
+  for (const event of eventsRes.rows.reverse()) {
+    RoomManager.sendToParticipant(ws, "GAME_EVENT", {
+      id: event.id,
+      type: event.type,
+      actor_name: event.actor_name || undefined,
+      payload: event.payload,
+      timestamp: event.created_at,
+    });
+  }
+}
+
 export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: { userId: string; username: string }) {
   try {
     const message = JSON.parse(rawMessage) as ClientWSMessage<ClientMessageType>;
@@ -40,8 +64,9 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
       case "JOIN_CAMPAIGN": {
         const msg = message as ClientWSMessage<"JOIN_CAMPAIGN">;
         const { invite_code } = msg.payload;
+        const inviteCode = invite_code?.trim().toUpperCase();
 
-        if (!invite_code) {
+        if (!inviteCode) {
           return RoomManager.sendToParticipant(ws, "ERROR", {
             code: "BAD_REQUEST",
             message: "Missing invite code",
@@ -50,8 +75,8 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
 
         // 1. Find campaign by invite code
         const campaignRes = await pool.query(
-          "SELECT id, name FROM public.campaigns WHERE invite_code = $1",
-          [invite_code.toUpperCase()]
+          "SELECT id, name, owner_id FROM public.campaigns WHERE invite_code = $1",
+          [inviteCode]
         );
 
         if (!campaignRes.rows || campaignRes.rows.length === 0) {
@@ -62,11 +87,15 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
         }
 
         const campaignId = campaignRes.rows[0].id;
+        const role = campaignRes.rows[0].owner_id === user.userId ? "dm" : "player";
 
         // 2. Add as member if not already (default to player role)
         await pool.query(
-          "INSERT INTO public.campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'player') ON CONFLICT (campaign_id, user_id) DO NOTHING",
-          [campaignId, user.userId]
+          `INSERT INTO public.campaign_members (campaign_id, user_id, role, last_seen_at)
+           VALUES ($1, $2, $3, now())
+           ON CONFLICT (campaign_id, user_id)
+           DO UPDATE SET last_seen_at = now()`,
+          [campaignId, user.userId, role]
         );
 
         // 3. Fetch active character for this user in this campaign if they have one
@@ -93,6 +122,8 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           username: user.username,
           character,
         });
+
+        await sendRecentEvents(ws, campaignId);
 
         break;
       }
@@ -133,8 +164,13 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           }
         }
 
+        await pool.query(
+          "UPDATE public.campaign_members SET character_id = COALESCE($1, character_id), last_seen_at = now() WHERE campaign_id = $2 AND user_id = $3",
+          [character?.id || null, campaign_id, user.userId]
+        );
+
         // Register in RoomManager
-        const result = RoomManager.addParticipant(campaign_id, user.userId, user.username, ws, character_id);
+        const result = RoomManager.addParticipant(campaign_id, user.userId, user.username, ws, character?.id || character_id);
 
         if (!result.success) {
           return RoomManager.sendToParticipant(ws, "ERROR", {
@@ -149,6 +185,8 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           username: user.username,
           character,
         });
+
+        await sendRecentEvents(ws, campaign_id);
 
         break;
       }
@@ -266,6 +304,31 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           payload,
           timestamp: logRes.rows[0].created_at,
         });
+
+        break;
+      }
+
+      case "ACTION_SUBMIT": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"ACTION_SUBMIT">;
+
+        try {
+          const { event } = await processPlayerAction(pool, participant, msg.payload);
+          RoomManager.broadcastToRoom(participant.campaignId, "GAME_EVENT", event);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unable to process action";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
 
         break;
       }

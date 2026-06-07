@@ -110,6 +110,41 @@ router.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// GET /api/characters/campaign/:campaignId - List all active characters in a campaign
+router.get("/campaign/:campaignId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const campaignId = req.params.campaignId;
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    // Verify user is member of the campaign
+    const memberCheck = await pool.query(
+      "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+      [campaignId, userId]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
+    }
+
+    const charactersRes = await pool.query(
+      `SELECT c.*, u.username
+       FROM public.characters c
+       JOIN public.users u ON c.user_id = u.id
+       WHERE c.campaign_id = $1 AND c.is_alive = true`,
+      [campaignId]
+    );
+
+    res.json({ characters: charactersRes.rows });
+  } catch (error) {
+    console.error("List campaign characters error:", error);
+    res.status(500).json({ error: "Internal server error fetching campaign characters" });
+  }
+});
+
 // GET /api/characters/:id - Retrieve character details
 router.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const characterId = req.params.id;
@@ -145,41 +180,6 @@ router.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Respon
   } catch (error) {
     console.error("Get character error:", error);
     res.status(500).json({ error: "Internal server error fetching character" });
-  }
-});
-
-// GET /api/characters/campaign/:campaignId - List all active characters in a campaign
-router.get("/campaign/:campaignId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const campaignId = req.params.campaignId;
-  const userId = req.user?.sub;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  try {
-    // Verify user is member of the campaign
-    const memberCheck = await pool.query(
-      "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
-      [campaignId, userId]
-    );
-
-    if (memberCheck.rows.length === 0) {
-      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
-    }
-
-    const charactersRes = await pool.query(
-      `SELECT c.*, u.username
-       FROM public.characters c
-       JOIN public.users u ON c.user_id = u.id
-       WHERE c.campaign_id = $1 AND c.is_alive = true`,
-      [campaignId]
-    );
-
-    res.json({ characters: charactersRes.rows });
-  } catch (error) {
-    console.error("List campaign characters error:", error);
-    res.status(500).json({ error: "Internal server error fetching campaign characters" });
   }
 });
 
