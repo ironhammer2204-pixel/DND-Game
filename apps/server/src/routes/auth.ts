@@ -1,26 +1,59 @@
 import { Router } from "express";
-import { supabase } from "../db/supabase";
+import { createUserSupabaseClient, supabaseAuth } from "../db/supabase";
 import { pool } from "../db/client";
 
 const router = Router();
+const reservedEmailDomains = new Set(["example.com", "example.org", "example.net"]);
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function getEmailDomain(email: string): string | undefined {
+  return email.split("@")[1]?.toLowerCase();
+}
+
+function authErrorStatus(message: string, fallback: number): number {
+  const normalizedMessage = message.toLowerCase();
+
+  if (normalizedMessage.includes("rate limit")) {
+    return 429;
+  }
+
+  return fallback;
+}
 
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
-  const { email, password, username } = req.body;
+  const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
+  const password = typeof req.body.password === "string" ? req.body.password : "";
+  const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
 
   if (!email || !password || !username) {
     return res.status(400).json({ error: "Missing required fields: email, password, username" });
   }
 
+  if (reservedEmailDomains.has(getEmailDomain(email) ?? "")) {
+    return res.status(400).json({
+      error: "invalid_email_domain",
+      message: "Use a real email domain for registration; reserved example domains are rejected."
+    });
+  }
+
   try {
-    // 1. Sign up user in Supabase Auth
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await supabaseAuth.auth.signUp({
       email,
       password,
+      options: {
+        data: { username },
+      },
     });
 
     if (error || !data.user) {
-      return res.status(400).json({ error: error?.message || "Registration failed" });
+      return res.status(authErrorStatus(error?.message || "Registration failed", 400)).json({
+        error: error?.message ? "registration_failed" : "registration_failed",
+        message: error?.message || "Registration failed"
+      });
     }
 
     const userId = data.user.id;
@@ -48,21 +81,24 @@ router.post("/register", async (req, res) => {
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
+  const password = typeof req.body.password === "string" ? req.body.password : "";
 
   if (!email || !password) {
     return res.status(400).json({ error: "Missing required fields: email, password" });
   }
 
   try {
-    // 1. Sign in with password via Supabase Auth
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabaseAuth.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error || !data.user || !data.session) {
-      return res.status(400).json({ error: error?.message || "Login failed" });
+      return res.status(authErrorStatus(error?.message || "Login failed", 401)).json({
+        error: "login_failed",
+        message: error?.message || "Login failed"
+      });
     }
 
     // 2. Fetch user profile from public.users to retrieve username
@@ -92,8 +128,15 @@ router.post("/login", async (req, res) => {
 // POST /api/auth/logout
 router.post("/logout", async (req, res) => {
   try {
-    // Supabase stateless signout
-    const { error } = await supabase.auth.signOut();
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+
+    if (!token) {
+      return res.status(401).json({ error: "Missing bearer token" });
+    }
+
+    const userSupabase = createUserSupabaseClient(token);
+    const { error } = await userSupabase.auth.signOut({ scope: "local" });
     if (error) {
       return res.status(400).json({ error: error.message });
     }

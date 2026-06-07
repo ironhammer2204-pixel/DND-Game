@@ -17,13 +17,13 @@ Last updated: 2026-06-07
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - Supabase config is aligned with the remote Postgres major version: `17`.
 - Local `supabase db reset` has not been verified yet because Docker was not running locally.
-- **Monorepo, Tooling, Phase 1 (Foundation) & Phase 2 Dice Engine are fully completed**:
+- **Monorepo, tooling, and the core Phase 1 / early Phase 2 implementation are in place**:
   - Implemented portable Node.js (v22.12.0 LTS) under `.node/` to bypass system dependency constraints.
   - Initialized Turborepo monorepo with `apps/web`, `apps/server`, and `packages/shared` workspaces.
   - Set up base configurations for TypeScript, ESLint (v9 Flat Config), and Prettier.
   - Implemented types, schemas, and WS message definitions in `@dnd/shared/src/types`.
   - Implemented game constant mappings (races, classes, skills) in `@dnd/shared/src/constants`.
-  - Created Express server with `cors`, `helmet`, and Supabase JWT verification middleware.
+  - Created Express server with `cors`, `helmet`, `/health` + `/health/db`, protected `GET /api/me`, token-scoped logout, and graceful HTTP/WS/DB shutdown handling.
   - Added REST endpoints for User authentication, Campaign creation/joining, and Character sheet management.
   - Integrated Supabase DB client pool utilizing environment connection settings.
   - Implemented WebSocket Room Manager with room boundaries (max 10 players), connection tracking, and broadcast capabilities.
@@ -36,7 +36,9 @@ Last updated: 2026-06-07
   - Completed campaign member/event REST endpoints: `GET /api/campaigns/:id/members` and `GET /api/campaigns/:id/events`.
   - Updated campaign detail responses to include members, made campaign join idempotent for existing members, and fixed character campaign route ordering.
   - Added Phase 2 world basics: new campaigns seed Emberfall Village, Briarwood Wilds, and Ashen Gate Ruins; clients can fetch world state, view the current location, move along connected paths, persist character location in `campaigns.world_state`, and receive `WORLD_UPDATE` broadcasts.
-  - Verified server/web TypeScript with no-emit checks and lint checks pass cleanly; full emit build is currently blocked locally by generated-output permission errors in `dist`, `node_modules/.tmp`, and Turbo logs.
+  - Verified full monorepo `npm run build` and `npm run lint` pass locally.
+  - Verified `/health` returns 200, `/api/me` rejects missing auth with 401, and reserved email domains are rejected locally with a clear `invalid_email_domain` error.
+  - `GET /health/db` is implemented, but a successful DB smoke test still depends on a real `DATABASE_URL` with the Supabase DB password; the checked-in example still uses a placeholder password.
 
 ---
 
@@ -140,7 +142,7 @@ dnd-game/
 │           ├── game/
 │           │   └── diceEngine.ts     # Cryptographically secure dice rolling utility
 │           ├── middleware/
-│           │   └── auth.ts           # Local JWT verification middleware
+│           │   └── auth.ts           # Bearer-token verification via Supabase getUser()
 │           ├── routes/
 │           │   ├── auth.ts           # Authentication REST endpoints
 │           │   ├── campaigns.ts      # Campaign lobby & management REST endpoints
@@ -482,17 +484,17 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Enable Row Level Security on all tables
 - [x] Write baseline RLS policies: users can only read/write their own campaign data
 - [x] Enable Supabase Auth (email/password)
-- [x] Test DB connection from server with `pg` pool
+- [ ] Test DB connection from server with `pg` pool
 
 #### Express server (Render)
 - [x] Init Express app with TypeScript
 - [x] Add `cors`, `helmet`, `express-json` middleware
-- [x] Add auth middleware (verify Supabase JWT)
+- [x] Add auth middleware (verify Supabase auth bearer token via `getUser()`)
 - [x] Add `POST /api/auth/register` route
 - [x] Add `POST /api/auth/login` route
 - [x] Add `POST /api/auth/logout` route
 - [x] Add WebSocket server (`ws` library) on same HTTP server
-- [x] Confirm server deploys to Render free tier
+- [ ] Confirm server deploys to Render free tier
 
 #### WebSocket room manager
 - [x] Create `roomManager.ts` — Map of campaignId → Set of WebSocket connections
@@ -694,6 +696,8 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 POST   /api/auth/register
 POST   /api/auth/login
 POST   /api/auth/logout
+GET    /api/auth/me
+GET    /api/me
 
 POST   /api/campaigns                    # create campaign
 GET    /api/campaigns                    # list campaigns user belongs to
@@ -716,6 +720,9 @@ GET    /api/campaigns/:id/quests/:questId
 
 All mutation endpoints require auth middleware. Character stat updates are server-internal only — no public PATCH route for HP, gold, or inventory.
 
+Health endpoints:
+`GET /health` for app status and `GET /health/db` for database connectivity.
+
 ---
 
 ## Environment Variables
@@ -724,8 +731,8 @@ All mutation endpoints require auth middleware. Character stat updates are serve
 ```
 DATABASE_URL=postgresql://...          # Supabase connection string
 SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_ANON_KEY=...                  # public auth client key
 SUPABASE_SERVICE_KEY=...               # server-side only
-JWT_SECRET=...
 GROQ_API_KEY=...                       # from console.groq.com (free)
 PORT=3001
 NODE_ENV=production

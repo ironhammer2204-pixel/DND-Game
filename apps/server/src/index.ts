@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import { createServer } from "http";
+import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { RACES } from "@dnd/shared";
 import { pool } from "./db/client";
@@ -14,6 +14,7 @@ import { RoomManager } from "./websocket/roomManager";
 
 const app = express();
 const port = process.env.PORT || 3001;
+let shuttingDown = false;
 
 app.use(helmet());
 app.use(cors());
@@ -27,12 +28,23 @@ app.get("/api/auth/me", authMiddleware, (req: AuthenticatedRequest, res) => {
   res.json({ message: "Access granted", user: req.user });
 });
 
-app.get("/health", async (req, res) => {
+app.get("/api/me", authMiddleware, (req: AuthenticatedRequest, res) => {
+  res.json({ user: req.user });
+});
+
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "dnd-game-server",
+    racesCount: RACES.length,
+  });
+});
+
+app.get("/health/db", async (_req, res) => {
   try {
     const dbCheck = await pool.query("SELECT NOW()");
     res.json({
       status: "ok",
-      racesCount: RACES.length,
       database: "connected",
       time: dbCheck.rows[0].now,
     });
@@ -49,7 +61,7 @@ app.get("/health", async (req, res) => {
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-wss.on("connection", (ws, req) => {
+wss.on("connection", async (ws, req) => {
   const url = new URL(req.url || "", "http://localhost");
   const token = url.searchParams.get("token");
 
@@ -58,7 +70,7 @@ wss.on("connection", (ws, req) => {
     return;
   }
 
-  const user = authenticateSocket(token);
+  const user = await authenticateSocket(token);
   if (!user) {
     ws.close(4001, "Unauthorized: Invalid or expired token");
     return;
@@ -84,6 +96,34 @@ wss.on("connection", (ws, req) => {
       });
     }
   });
+});
+
+async function shutdown(signal: NodeJS.Signals, activeServer: Server, activeWsServer: WebSocketServer) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+  console.log(`${signal} received. Closing server, WebSocket connections, and database pool.`);
+
+  await new Promise<void>((resolve) => {
+    activeServer.close(() => resolve());
+  });
+
+  await new Promise<void>((resolve) => {
+    activeWsServer.close(() => resolve());
+  });
+
+  await pool.end();
+  console.log("Graceful shutdown complete.");
+}
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT", server, wss).finally(() => process.exit(0));
+});
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM", server, wss).finally(() => process.exit(0));
 });
 
 server.listen(port, async () => {

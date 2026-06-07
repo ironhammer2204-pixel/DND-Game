@@ -1,10 +1,10 @@
 import { WebSocket } from "ws";
-import jwt from "jsonwebtoken";
 import { ClientWSMessage, ClientMessageType, Character } from "@dnd/shared";
 import { RoomManager } from "./roomManager";
 import { pool } from "../db/client";
 import { rollDice } from "../game/diceEngine";
 import { processPlayerAction } from "../game/actionProcessor";
+import { supabaseAdmin } from "../db/supabase";
 
 export interface DecodedToken {
   sub: string;
@@ -14,23 +14,17 @@ export interface DecodedToken {
   };
 }
 
-// Authenticate socket token
-export function authenticateSocket(token: string): { userId: string; username: string } | null {
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    console.error("JWT_SECRET is not configured on the server.");
+export async function authenticateSocket(token: string): Promise<{ userId: string; username: string } | null> {
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+
+  if (error || !data.user) {
     return null;
   }
 
-  try {
-    const decoded = jwt.verify(token, jwtSecret) as DecodedToken;
-    return {
-      userId: decoded.sub,
-      username: decoded.user_metadata?.username || decoded.email || "Unknown Player",
-    };
-  } catch {
-    return null;
-  }
+  return {
+    userId: data.user.id,
+    username: data.user.user_metadata?.username || data.user.email || "Unknown Player",
+  };
 }
 
 async function sendRecentEvents(ws: WebSocket, campaignId: string): Promise<void> {
