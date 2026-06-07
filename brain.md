@@ -231,7 +231,6 @@ user_id       uuid REFERENCES users(id)
 campaign_id   uuid REFERENCES campaigns(id)
 name          text NOT NULL
 race          text NOT NULL
-class         text NOT NULL
 level         int DEFAULT 1
 xp            int DEFAULT 0
 hp_current    int NOT NULL
@@ -242,6 +241,50 @@ gold          int DEFAULT 0
 reputation    jsonb DEFAULT '{}'
 is_alive      bool DEFAULT true
 updated_at    timestamptz DEFAULT now()
+```
+
+### `character_classes` — Primary and Hidden Classes
+```sql
+id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
+character_id    uuid REFERENCES characters(id) UNIQUE FOR PRIMARY
+class_type      text NOT NULL  -- 'primary' or 'hidden'
+class_name      text NOT NULL
+class_level     int DEFAULT 1
+unlocked_at     timestamptz    -- null for primary (created at character creation), set at unlock for hidden
+unlock_story    text           -- AI-generated unlock scene narration, stored for posterity
+variant         text           -- which variant of this hidden class (e.g. 'merciful_shadow_blade')
+created_at      timestamptz DEFAULT now()
+```
+
+### `character_behaviour_log` — Behaviour Tracking
+```sql
+id                uuid PRIMARY KEY DEFAULT gen_random_uuid()
+character_id      uuid REFERENCES characters(id)
+campaign_id       uuid REFERENCES campaigns(id)
+action_type       text NOT NULL  -- 'combat_kill', 'npc_spared', 'lie_told', 'secret_found', 'ally_abandoned', etc.
+tags              text[] NOT NULL -- ['shadow', 'mercy', 'deception', 'curiosity']
+weight            int DEFAULT 1   -- significance 1-5
+context           jsonb          -- what happened, when, where
+created_at        timestamptz DEFAULT now()
+```
+
+### `character_behaviour_profile` — Accumulated Behaviour Scores
+```sql
+character_id      uuid PRIMARY KEY REFERENCES characters(id)
+tag_scores        jsonb NOT NULL  -- { shadow: 47, mercy: 12, chaos: 31, ... }
+updated_at        timestamptz DEFAULT now()
+```
+
+### `character_class_unlocks` — Hidden Class Unlock Events
+```sql
+id                uuid PRIMARY KEY DEFAULT gen_random_uuid()
+character_id      uuid REFERENCES characters(id)
+hidden_class_id   text NOT NULL  -- references HIDDEN_CLASSES config
+unlock_trigger    text          -- 'npc_contact', 'dream_sequence', 'world_event'
+triggered_at      timestamptz
+accepted_at       timestamptz   -- null if player refused the unlock
+variant_selected  text          -- which variant was chosen (if applicable)
+narrative_scene   text          -- full AI-generated unlock narrative
 ```
 
 ### `inventory_items`
@@ -484,9 +527,111 @@ relationships     jsonb             -- { npc_id: { trust: 0-100, fear: 0-100, ow
 
 **Nobody wrote any of that.** It emerged from four systems with memory, goals, and consequences.
 
+---
 
+## The Emergent Class System
+> **Core idea: A hidden class is a pattern of behaviour that the server recognises over time. The player never tries to unlock it. They just play — and the world responds to who they're becoming.**
 
-### Client → Server
+### Philosophy
+Standard D&D classes are chosen at character creation. This system inverts that: your *actions* accumulate into a **behavioural fingerprint**. When that fingerprint matches a hidden archetype, something shifts. An NPC finds you. A dream triggers. A door opens.
+
+You didn't choose to become it. You *became* it.
+
+Every meaningful action gets tagged with invisible **behaviour weights**. The player never sees these numbers. The server silently accumulates them. When thresholds are crossed, the world delivers an unlock event — always grounded in the character's actual history.
+
+### Behaviour Tagging
+Every significant action is tagged with behaviour vectors:
+
+- **Combat kill** → tag: `shadow`, weight: 3
+- **NPC spared** → tag: `mercy`, weight: 2
+- **Lie told** → tag: `deception`, weight: 2
+- **Secret discovered** → tag: `curiosity`, weight: 3
+- **Ally abandoned** → tag: `chaos`, weight: 4
+- **Forbidden knowledge sought** → tag: `forbidden`, weight: 3
+- **Deal made with entity** → tag: `forbidden`, weight: 5
+
+The tags accumulate in `character_behaviour_profile.tag_scores`. The player has no access to these numbers. Ever.
+
+### Hidden Class Definition — The Config
+You define 10–15 patterns before launch. Each is just a **threshold configuration** — no code changes needed:
+
+```typescript
+// src/config/hiddenClasses.ts
+export const HIDDEN_CLASSES = [
+  {
+    id: 'shadow_blade',
+    name: 'Shadow Blade',
+    unlock_conditions: {
+      tag_thresholds: { shadow: 40, deception: 30 },  // behavioural minimums
+      stat_requirements: { dex: 14 },
+      action_requirements: ['killed_sleeping_enemy', 'stolen_from_ally'],
+      level_minimum: 4
+    },
+    trigger: 'npc_contact',     // how unlock is delivered
+    variants: [
+      {
+        id: 'merciful_shadow',
+        condition: { mercy: 20 }  // secondary condition
+      },
+      {
+        id: 'cruel_shadow',
+        condition: { cruelty: 20 }
+      }
+    ]
+  },
+  {
+    id: 'oathbreaker',
+    name: 'Oath Breaker',
+    unlock_conditions: {
+      tag_thresholds: { betrayal: 50, chaos: 20 },
+      action_requirements: ['broke_sworn_quest', 'attacked_ally_in_combat'],
+      level_minimum: 3
+    },
+    trigger: 'dream_sequence'
+  },
+  {
+    id: 'void_touched',
+    name: 'Void-Touched',
+    unlock_conditions: {
+      tag_thresholds: { forbidden: 60, curiosity: 40 },
+      action_requirements: ['read_forbidden_tome', 'made_deal_with_entity'],
+      level_minimum: 5
+    },
+    trigger: 'world_event'
+  }
+  // Add more anytime without touching game logic
+]
+```
+
+You don't need to know what `shadow_blade` *feels like* to define it. You know who unlocks it. The AI writes the unlock scene. The story is emergent.
+
+### The Unlock Experience — Three Delivery Types
+
+**`npc_contact`** — A mysterious NPC seeks the character out  
+The AI narrates using the character's actual behaviour history. The NPC has been watching. *"I've heard about what you did in Thornwall. The way you moved through shadows. I have a proposition."*  
+The player can refuse. That refusal is logged.
+
+**`dream_sequence`** — On the next long rest  
+The character has a vision generated by the AI using their behaviour tags as emotional core. Unsettling. Personal. At the end, a choice. The choice determines the variant.
+
+**`world_event`** — The world changes visibly  
+A locked door they visited before is now open. A faction they didn't know existed sends a messenger. A location transforms. The world acknowledges who they've become.
+
+### Variant Resolution
+Each hidden class has 2–4 **variants** determined by secondary behaviour at unlock moment.
+
+A character who qualifies for `Shadow Blade` but also has high `mercy` scores gets a different variant than one with high `cruelty`. Same unlock trigger, different mechanics, different AI-generated unlock scene.
+
+You define the variants but *genuinely don't know which one* any given player hits — because it depends on their full behaviour complexity over months of play.
+
+### What this achieves
+The player's specific actions — the merchant they betrayed in session 2, the forbidden book they read when alone, the ally they abandoned — those exact moments are *why* this happened *to this character*.
+
+The AI can reference all of it in the unlock scene because it's in the event log. That's what makes it feel alive.
+
+---
+
+## WebSocket Events
 ```
 ACTION_SUBMIT      { type, payload }   -- player action text or structured
 DICE_REQUEST       { dice_type, context, modifier }
@@ -789,13 +934,31 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Generated quests go through same DB + broadcast flow as hand-authored quests
 - [ ] Quests now reference nemeses and factions in their objectives (kill nemesis, secure location for faction)
 
+#### Emergent Class System
+- [ ] Create `character_behaviour_log` and `character_behaviour_profile` tables
+- [ ] Create `character_classes` table (replace single class column on characters)
+- [ ] Build `hiddenClassEngine.ts` — runs after every action, checks unlock thresholds
+- [ ] Implement behaviour tagging: every action type (kill, spare, lie, betray, etc.) increments relevant tags
+- [ ] Define `HIDDEN_CLASSES` config file with 10–15 pattern definitions (editable, no code changes needed)
+- [ ] Build behaviour threshold checker: when profile crosses unlock_conditions, queue unlock event
+- [ ] Implement three unlock delivery types:
+  - `npc_contact`: AI-generated NPC encounter referencing character's behaviour history
+  - `dream_sequence`: AI-generated dream vision using behaviour tags as emotional core
+  - `world_event`: Visible world change (door opens, faction messenger arrives, etc.)
+- [ ] Build variant resolver: determine which variant based on secondary behaviour scores
+- [ ] Store unlock_story narration in `character_class_unlocks` for posterity
+- [ ] Allow player to refuse unlock (refusal is logged)
+- [ ] Build hidden class UI: show class name and flavour only after unlock
+- [ ] Extend AI context builder: include character's behaviour tags and unlock history
+- [ ] Ensure AI references actual behaviour history in unlock narration
+
 #### Phase 2 catch-up (still needed before Phase 3 is playable)
 - [ ] **Build location/world navigation UI** — players can see locations, see connections, click to move (blocks all Phase 2 completion)
 - [ ] Build inventory system REST endpoints + UI (needed before equipment affects combat)
 - [ ] Build quest log UI (needed for faction-generated quests)
 - [ ] Seed item catalog and starter quests
 
-**Phase 3 done when:** Party can fight a named Nemesis who remembers them by name, the world pressure changes based on faction power, a new quest appears because an NPC's agenda progressed, and after Session 1 the party logs in to find the world has changed while they were gone.
+**Phase 3 done when:** Party can fight a named Nemesis who remembers them by name, the world pressure changes based on faction power, a new quest appears because an NPC's agenda progressed, a character unlocks a hidden class through their behaviour pattern, and after Session 1 the party logs in to find the world has changed while they were gone.
 
 ---
 
@@ -911,5 +1074,5 @@ VITE_SUPABASE_ANON_KEY=...
 
 ---
 
-*brain.md — last updated: 2026-06-07 major architecture: added Living World System (Nemesis, Factions, World Heartbeat, NPC Agendas) to Phase 3*
+*brain.md — last updated: 2026-06-07 complete architecture: added Emergent Class System (behaviour-driven hidden classes) to Phase 3*
 
