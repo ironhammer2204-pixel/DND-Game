@@ -17,7 +17,15 @@ Last updated: 2026-06-07
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - Supabase config is aligned with the remote Postgres major version: `17`.
 - Local `supabase db reset` has not been verified yet because Docker was not running locally.
-- Monorepo app scaffolding has not started yet; coordinate `apps/` and `packages/` structure with the teammate starting monorepo work.
+- **Monorepo and Tooling foundation is fully completed**:
+  - Implemented portable Node.js (v22.12.0 LTS) under `.node/` to bypass system dependency constraints.
+  - Initialized Turborepo monorepo with `apps/web`, `apps/server`, and `packages/shared` workspaces.
+  - Set up base configurations for TypeScript, ESLint (v9 Flat Config), and Prettier.
+  - Implemented types, schemas, and WS message definitions in `@dnd/shared/src/types`.
+  - Implemented game constant mappings (races, classes, skills) in `@dnd/shared/src/constants`.
+  - Scaffolded the React/Vite/TS app skeleton in `apps/web`.
+  - Created the Express/WS node backend skeleton in `apps/server`.
+  - Verified compilation build and lint checks pass cleanly.
 
 ---
 
@@ -417,11 +425,11 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 **Goal: friends can join a room, create characters, and chat in real time**
 
 #### Monorepo + tooling
-- [ ] Init Turborepo with `apps/web`, `apps/server`, `packages/shared`
-- [ ] Configure TypeScript in all three packages
-- [ ] Set up ESLint + Prettier across workspace
-- [ ] Add `packages/shared/src/types/` with Character, Campaign, User, Quest, Event types
-- [ ] Add `packages/shared/src/constants/` with Races, Classes, DiceTypes, Skills
+- [x] Init Turborepo with `apps/web`, `apps/server`, `packages/shared`
+- [x] Configure TypeScript in all three packages
+- [x] Set up ESLint + Prettier across workspace
+- [x] Add `packages/shared/src/types/` with Character, Campaign, User, Quest, Event types
+- [x] Add `packages/shared/src/constants/` with Races, Classes, DiceTypes, Skills
 
 #### Supabase setup
 - [x] Create Supabase project (free tier)
@@ -432,7 +440,7 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Test DB connection from server with `pg` pool
 
 #### Express server (Render)
-- [ ] Init Express app with TypeScript
+- [x] Init Express app with TypeScript
 - [ ] Add `cors`, `helmet`, `express-json` middleware
 - [ ] Add auth middleware (verify Supabase JWT)
 - [ ] Add `POST /api/auth/register` route
