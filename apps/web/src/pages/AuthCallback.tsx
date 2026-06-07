@@ -31,6 +31,7 @@ export function AuthCallback() {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "X-Pinggy-No-Screen": "true",
               "ngrok-skip-browser-warning": "true",
               "bypass-tunnel-reminder": "true",
             },
@@ -48,6 +49,7 @@ export function AuthCallback() {
           const res = await fetch(`${apiUrl}/api/auth/me`, {
             headers: {
               Authorization: `Bearer ${accessToken}`,
+              "X-Pinggy-No-Screen": "true",
               "ngrok-skip-browser-warning": "true",
               "bypass-tunnel-reminder": "true"
             },

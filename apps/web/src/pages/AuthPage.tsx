@@ -32,6 +32,7 @@ export function AuthPage() {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
+            "X-Pinggy-No-Screen": "true",
             "ngrok-skip-browser-warning": "true",
             "bypass-tunnel-reminder": "true"
           },
@@ -45,6 +46,7 @@ export function AuthPage() {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
+            "X-Pinggy-No-Screen": "true",
             "ngrok-skip-browser-warning": "true",
             "bypass-tunnel-reminder": "true"
           },
@@ -78,7 +80,21 @@ export function AuthPage() {
     try {
       const apiUrl = await resolveApiUrl();
       const callbackUrl = `${window.location.origin}/auth/callback`;
-      window.location.assign(`${apiUrl}/api/auth/google?redirect_to=${encodeURIComponent(callbackUrl)}`);
+      const res = await fetch(`${apiUrl}/api/auth/google?redirect_to=${encodeURIComponent(callbackUrl)}`, {
+        headers: {
+          "Accept": "application/json",
+          "X-Pinggy-No-Screen": "true",
+          "ngrok-skip-browser-warning": "true",
+          "bypass-tunnel-reminder": "true",
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Unable to start Google sign-in");
+      }
+
+      window.location.assign(data.url);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Unable to start Google sign-in");
       setGoogleLoading(false);

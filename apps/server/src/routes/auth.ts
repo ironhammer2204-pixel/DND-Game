@@ -183,6 +183,11 @@ router.get("/google", async (req, res) => {
       return res.status(500).json({ error: error?.message || "Failed to initialize Google Auth" });
     }
 
+    const wantsJson = req.accepts(["json", "html"]) === "json" || req.get("x-pinggy-no-screen") === "true";
+    if (wantsJson) {
+      return res.json({ url: data.url });
+    }
+
     res.redirect(data.url);
   } catch (error) {
     console.error("Google Auth error:", error);
