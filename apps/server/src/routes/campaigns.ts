@@ -3,6 +3,7 @@ import { PoolClient } from "pg";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { pool } from "../db/client";
 import { RoomManager } from "../websocket/roomManager";
+import { handleFactionQuestCompletion } from "../game/factionEngine";
 
 const router = Router();
 
@@ -473,6 +474,10 @@ router.patch("/:id/quests/:questId/objective", authMiddleware, async (req: Authe
        RETURNING *`,
       [JSON.stringify(objectives), nextStatus, questId, campaignId]
     );
+
+    if (nextStatus === "complete") {
+      await handleFactionQuestCompletion(client, campaignId, updatedRes.rows[0]);
+    }
 
     await client.query("COMMIT");
     const updatedQuest = updatedRes.rows[0];

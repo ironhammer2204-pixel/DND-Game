@@ -6,6 +6,7 @@ import { rollDice } from "../game/diceEngine";
 import { processPlayerAction } from "../game/actionProcessor";
 import { supabaseAdmin } from "../db/supabase";
 import { startCombat, processCombatAction, rollDeathSave, getActiveEncounter } from "../game/combatEngine";
+import { resolveAction, runFactionCycle } from "../game/factionEngine";
 
 
 export interface DecodedToken {
@@ -423,6 +424,214 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
             code: "BAD_REQUEST",
             message: errorMessage,
           });
+        }
+        break;
+      }
+
+      case "VETO_FACTION_ACTION": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can veto faction actions.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"VETO_FACTION_ACTION">;
+        const { action_id } = msg.payload;
+
+        try {
+          await resolveAction(pool, participant.campaignId, action_id, true);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to veto action";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
+        break;
+      }
+
+      case "FORCE_FACTION_ACTION": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can force faction actions.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"FORCE_FACTION_ACTION">;
+        const { faction_id, action_type, target_type, target_id } = msg.payload;
+
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const actionRes = await client.query(
+            `INSERT INTO public.faction_actions (campaign_id, faction_id, action_type, target_type, target_id, pressure_cost, status, cooldown_until, triggered_by)
+             VALUES ($1, $2, $3, $4, $5, 0, 'pending', now(), 'dm')
+             RETURNING id`,
+            [participant.campaignId, faction_id, action_type, target_type, target_id]
+          );
+          const actionId = actionRes.rows[0].id;
+          await resolveAction(client, participant.campaignId, actionId, false);
+          await client.query("COMMIT");
+        } catch (error) {
+          await client.query("ROLLBACK");
+          const errorMessage = error instanceof Error ? error.message : "Failed to force action";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        } finally {
+          client.release();
+        }
+        break;
+      }
+
+      case "PAUSE_FACTION_ENGINE": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can pause/resume the engine.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"PAUSE_FACTION_ENGINE">;
+        const { pause } = msg.payload;
+
+        try {
+          await pool.query(
+            `UPDATE public.campaigns
+             SET world_state = jsonb_set(coalesce(world_state, '{}'::jsonb), '{faction_engine_paused}', $1::jsonb)
+             WHERE id = $2`,
+            [JSON.stringify(!!pause), participant.campaignId]
+          );
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to update engine state";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
+        break;
+      }
+
+      case "SET_FACTION_RELATION": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can edit faction relations.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"SET_FACTION_RELATION">;
+        const { faction_a_id, faction_b_id, score, treaty_type, expires_in_days } = msg.payload;
+        const expiry = expires_in_days ? new Date(Date.now() + expires_in_days * 24 * 60 * 60 * 1000) : null;
+
+        try {
+          await pool.query(
+            `INSERT INTO public.faction_relations (campaign_id, faction_a_id, faction_b_id, score, treaty_type, treaty_expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (campaign_id, faction_a_id, faction_b_id)
+             DO UPDATE SET score = EXCLUDED.score, treaty_type = EXCLUDED.treaty_type, treaty_expires_at = EXCLUDED.treaty_expires_at`,
+            [participant.campaignId, faction_a_id, faction_b_id, score, treaty_type || "none", expiry]
+          );
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to set relation";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
+        break;
+      }
+
+      case "TRIGGER_FACTION_EVENT": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can trigger faction events.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"TRIGGER_FACTION_EVENT">;
+        const { event_type } = msg.payload;
+
+        if (event_type === "cycle") {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            await runFactionCycle(client, participant.campaignId, true);
+            await client.query("COMMIT");
+          } catch (error) {
+            await client.query("ROLLBACK");
+            const errorMessage = error instanceof Error ? error.message : "Failed to run faction cycle";
+            return RoomManager.sendToParticipant(ws, "ERROR", {
+              code: "BAD_REQUEST",
+              message: errorMessage,
+            });
+          } finally {
+            client.release();
+          }
         }
         break;
       }

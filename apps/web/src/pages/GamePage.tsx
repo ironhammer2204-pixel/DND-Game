@@ -4,10 +4,12 @@ import { useGameStore } from "../stores/gameStore";
 import { WsReconnectBanner } from "../components/WsReconnectBanner";
 import { DicePanel } from "../components/DicePanel";
 import { NemesisGallery } from "../components/NemesisGallery";
+import { FactionControlRoom } from "../components/FactionControlRoom";
 import { RACES, CLASSES } from "@dnd/shared";
 import { API_URL, WS_URL } from "../config";
-import type { Character, DiceType, Quest, Nemesis, Faction, ServerWSMessage, ServerMessageType, NPC } from "@dnd/shared";
+import type { Character, DiceType, Quest, Nemesis, ServerWSMessage, ServerMessageType, NPC } from "@dnd/shared";
 import type React from "react";
+
 
 interface ChatPayload { sender_name: string; text: string; }
 interface ExplorationPayload {
@@ -73,8 +75,12 @@ export function GamePage() {
     activeCampaign, activeRole, partyCharacters, myCharacter, eventLogs,
     ws, wsStatus, setPartyCharacters, setMyCharacter, clearEvents,
     setWs, setWsStatus, handleWsMessage, setActiveCampaign,
-    activeCombat, locations, setLocations, activeRoll, dismissActiveRoll
+    activeCombat, locations, setLocations, activeRoll, dismissActiveRoll,
+    factions, reputations,
+    setFactions, setRelations, setReputations, setFactionActions
   } = useGameStore();
+
+  const [showFactions, setShowFactions] = useState(false);
 
   const [chatMessage, setChatMessage] = useState("");
   const [charName, setCharName] = useState("");
@@ -96,7 +102,6 @@ export function GamePage() {
 
   // Nemesis system state
   const [nemeses, setNemeses] = useState<Nemesis[]>([]);
-  const [factions, setFactions] = useState<Faction[]>([]);
   const [ambushAlert, setAmbushAlert] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "nemesis">("chat");
 
@@ -160,11 +165,21 @@ export function GamePage() {
     } catch (err) { console.error("Error fetching nemeses:", err); }
   };
 
-  const fetchFactions = async (campaignId: string) => {
+  const fetchFactionSystemData = async (campaignId: string) => {
     try {
-      const data = await apiFetch(`/api/campaigns/${campaignId}/factions`);
-      setFactions(data.factions ?? []);
-    } catch (err) { console.error("Error fetching factions:", err); }
+      const [factionsData, relationsData, reputationsData, actionsData] = await Promise.all([
+        apiFetch(`/api/campaigns/${campaignId}/factions`),
+        apiFetch(`/api/campaigns/${campaignId}/factions/relations`),
+        apiFetch(`/api/campaigns/${campaignId}/factions/reputations`),
+        apiFetch(`/api/campaigns/${campaignId}/factions/actions`),
+      ]);
+      setFactions(factionsData.factions ?? []);
+      setRelations(relationsData.relations ?? []);
+      setReputations(reputationsData.reputations ?? []);
+      setFactionActions(actionsData.actions ?? []);
+    } catch (err) {
+      console.error("Error fetching faction system data:", err);
+    }
   };
 
   const fetchWorld = async (campaignId: string) => {
@@ -301,7 +316,7 @@ export function GamePage() {
       void fetchPartyCharacters(activeCampaign.id);
       void fetchQuests(activeCampaign.id);
       void fetchNemeses(activeCampaign.id);
-      void fetchFactions(activeCampaign.id);
+      void fetchFactionSystemData(activeCampaign.id);
       void fetchWorld(activeCampaign.id);
     }, 0);
     setWsStatus("connecting");
@@ -337,13 +352,7 @@ export function GamePage() {
           setAmbushAlert(msg);
           setTimeout(() => setAmbushAlert(null), 8000);
         }
-        if (message.type === "FACTION_UPDATE") {
-          const { faction } = message.payload as { faction: Faction };
-          setFactions((prev) => {
-            const idx = prev.findIndex((f) => f.id === faction.id);
-            return idx >= 0 ? prev.map((f, i) => (i === idx ? faction : f)) : [...prev, faction];
-          });
-        }
+
       } catch (err) { console.error("WS parse error:", err); }
     };
     socket.onclose = () => { setWsStatus("disconnected"); setWs(null); };
@@ -473,6 +482,14 @@ export function GamePage() {
   const activeQuests = quests.filter((quest) => quest.status === "active");
   const completedQuests = quests.filter((quest) => quest.status === "complete");
 
+  const bountyReputations = myCharacter
+    ? reputations.filter(
+        (r) =>
+          r.character_id === myCharacter.id &&
+          (r.tier === "wanted" || r.tier === "hunted")
+      )
+    : [];
+
   return (
     <div className="game-page">
       <WsReconnectBanner status={wsStatus} />
@@ -537,6 +554,42 @@ export function GamePage() {
             )}
           </div>
 
+          <div className="rumors-feed-section" style={{ marginTop: "20px" }}>
+            <div className="sidebar-section-title">Rumors & World Events</div>
+            <div className="rumors-list" style={{
+              maxHeight: "150px",
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              padding: "4px",
+              background: "rgba(0,0,0,0.2)",
+              borderRadius: "4px",
+              border: "1px solid var(--border-subtle)"
+            }}>
+              {eventLogs
+                .filter((log) => log.type === "system")
+                .slice()
+                .reverse()
+                .map((log) => (
+                  <div key={log.id} className="rumor-item" style={{
+                    fontSize: "0.8rem",
+                    color: "var(--text-light)",
+                    borderBottom: "1px solid var(--border-subtle)",
+                    paddingBottom: "6px"
+                  }}>
+                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
+                      {new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span>{log.payload.text}</span>
+                  </div>
+                ))}
+              {eventLogs.filter((log) => log.type === "system").length === 0 && (
+                <div className="member-list__empty">No rumors or events yet.</div>
+              )}
+            </div>
+          </div>
+
           <div className="quest-log">
             <div className="sidebar-section-title">Quest Log</div>
             {questError && <div className="auth-message auth-message--error" role="alert">{questError}</div>}
@@ -579,6 +632,63 @@ export function GamePage() {
               </>
             )}
           </div>
+
+          <div className="location-control-section" style={{ marginTop: "20px" }}>
+            <div className="sidebar-section-title">Location Dominion & Laws</div>
+            <div className="location-list" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {locations.map((loc) => {
+                const state = typeof loc.state === "string" ? JSON.parse(loc.state) : (loc.state || {});
+                const controllingFactionId = state.controlling_faction_id;
+                const faction = controllingFactionId ? factions.find((f) => f.id === controllingFactionId) : null;
+                
+                const isFactionHidden = faction?.is_hidden && activeRole !== "dm";
+                const factionNameDisplay = isFactionHidden ? "??? (Hidden Faction)" : (faction ? faction.name : "None / Unaligned");
+                
+                const lawLabel = state.law ? state.law.replace(/_/g, " ").toUpperCase() : "ANARCHY";
+                const taxLabel = state.tax_percent !== undefined ? `${state.tax_percent}%` : "0%";
+                const patrolLabel = state.patrol_level ? state.patrol_level.toUpperCase() : "NONE";
+
+                return (
+                  <div key={loc.id} className="location-card" style={{
+                    padding: "10px",
+                    background: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "6px"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
+                      <span style={{ fontSize: "0.9rem", fontWeight: "600", color: "var(--text-white)" }}>{loc.name}</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{loc.type}</span>
+                    </div>
+                    {loc.description && <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "0 0 8px 0" }}>{loc.description}</p>}
+                    
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "0.75rem", borderTop: "1px solid var(--border-subtle)", paddingTop: "6px" }}>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Dominion: </span>
+                        <strong style={{ color: faction && !isFactionHidden ? "var(--accent-gold)" : "var(--text-muted)" }}>
+                          {factionNameDisplay}
+                        </strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Patrols: </span>
+                        <strong>{patrolLabel}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Laws: </span>
+                        <strong>{lawLabel}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Tax: </span>
+                        <strong>{taxLabel}</strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {locations.length === 0 && (
+                <div className="member-list__empty">No locations discovered yet.</div>
+              )}
+            </div>
+          </div>
         </aside>
 
         <main className="chat-column" aria-label="Game events and chat">
@@ -589,6 +699,36 @@ export function GamePage() {
               <button className="ambush-alert__close" onClick={() => setAmbushAlert(null)}>✕</button>
             </div>
           )}
+
+          {bountyReputations.map((rep) => {
+            const faction = factions.find((f) => f.id === rep.faction_id);
+            const isFactionHidden = faction?.is_hidden && activeRole !== "dm";
+            const factionName = faction && !isFactionHidden ? faction.name : "Unknown Faction";
+            const isHunted = rep.tier === "hunted";
+            return (
+              <div key={rep.id} className={`bounty-banner bounty-banner--${rep.tier}`} style={{
+                background: isHunted ? "rgba(127, 29, 29, 0.9)" : "rgba(239, 68, 68, 0.9)",
+                color: "#fff",
+                padding: "10px 14px",
+                borderRadius: "6px",
+                marginBottom: "12px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                border: isHunted ? "1px solid #ff0000" : "1px solid #ef4444",
+                boxShadow: "0 0 10px rgba(239,68,68,0.3)",
+              }}>
+                <span style={{ fontSize: "1.2rem" }}>🚨</span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ textTransform: "uppercase" }}>BOUNTY ACTIVE: {rep.tier}!</strong>
+                  <div style={{ fontSize: "0.85rem", opacity: 0.9 }}>
+                    You are {rep.tier} by <strong>{factionName}</strong>. Reputation Score: {rep.score}.
+                    {isHunted ? " Nemesis assassins are actively hunting you!" : " Watch your step in their territory."}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
 
           {/* Location HUD */}
           {currentLocation ? (
@@ -706,7 +846,7 @@ export function GamePage() {
                 isDM={activeRole === "dm"}
                 onUpdate={() => {
                   void fetchNemeses(activeCampaign.id);
-                  void fetchFactions(activeCampaign.id);
+                  void fetchFactionSystemData(activeCampaign.id);
                 }}
               />
             </div>
@@ -982,6 +1122,16 @@ export function GamePage() {
               </div>
               <p className="right-panel__dm-desc">You oversee the campaign. Narrate story beats and challenge the party.</p>
               
+              <div className="dm-factions-toggle-row" style={{ marginBottom: "16px" }}>
+                <button
+                  className="btn btn-gold"
+                  style={{ width: "100%" }}
+                  onClick={() => setShowFactions(true)}
+                >
+                  🏰 Faction Control Room
+                </button>
+              </div>
+              
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Combat Controller</div>
                 {activeCombat ? (
@@ -1076,6 +1226,59 @@ export function GamePage() {
                   </button>
                 </div>
               )}
+
+              <div className="right-panel__section">
+                <div className="sidebar-section-title">Faction Reputations</div>
+                <div className="faction-reputation-list" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {reputations
+                    .filter((r) => r.character_id === myCharacter.id)
+                    .map((rep) => {
+                      const faction = factions.find((f) => f.id === rep.faction_id);
+                      if (!faction) return null;
+                      
+                      const isFactionHidden = faction.is_hidden;
+                      const factionNameDisplay = isFactionHidden ? "??? (Hidden Faction)" : faction.name;
+
+                      let tierColor = "var(--text-muted)";
+                      if (rep.tier === "legend") tierColor = "var(--accent-gold)";
+                      else if (rep.tier === "champion") tierColor = "#a855f7"; // purple
+                      else if (rep.tier === "watched") tierColor = "#f97316"; // orange
+                      else if (rep.tier === "wanted") tierColor = "#ef4444"; // red
+                      else if (rep.tier === "hunted") tierColor = "#7f1d1d"; // dark red
+                      
+                      return (
+                        <div key={rep.id} className="faction-rep-item" style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "6px 8px",
+                          background: "rgba(255, 255, 255, 0.02)",
+                          border: "1px solid var(--border-subtle)",
+                          borderRadius: "4px"
+                        }}>
+                          <span className="faction-rep-name" style={{ fontSize: "0.85rem", fontWeight: "500", color: isFactionHidden ? "var(--text-muted)" : "var(--text-light)" }}>
+                            {factionNameDisplay}
+                          </span>
+                          <span className="faction-rep-badge" style={{
+                            fontSize: "0.75rem",
+                            fontWeight: "bold",
+                            color: tierColor,
+                            textTransform: "uppercase",
+                            padding: "2px 6px",
+                            background: "rgba(0, 0, 0, 0.2)",
+                            borderRadius: "3px",
+                            border: `1px solid ${tierColor}`
+                          }}>
+                            {rep.tier} ({rep.score})
+                          </span>
+                        </div>
+                      );
+                    })}
+                  {reputations.filter((r) => r.character_id === myCharacter.id).length === 0 && (
+                    <div className="member-list__empty" style={{ padding: "4px 0" }}>No reputations recorded.</div>
+                  )}
+                </div>
+              </div>
 
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Attributes &mdash; click to roll d20</div>
@@ -1183,7 +1386,6 @@ export function GamePage() {
           )}
         </aside>
       </div>
-
       {/* ASI Allocation Modal */}
       {showAsiModal && myCharacter && (
         <dialog className="modal-dialog" open style={{
@@ -1347,6 +1549,8 @@ export function GamePage() {
           </div>
         </div>
       )}
+
+      {showFactions && <FactionControlRoom onClose={() => setShowFactions(false)} />}
     </div>
   );
 }

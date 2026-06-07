@@ -1,6 +1,18 @@
 import { create } from "zustand";
-import type { Character, Campaign, ServerWSMessage, ServerMessageType, ServerMessageMap, CombatEncounter, Location } from "@dnd/shared";
-
+import type { 
+  Character, 
+  Campaign, 
+  ServerWSMessage, 
+  ServerMessageType, 
+  ServerMessageMap, 
+  CombatEncounter, 
+  Location,
+  Faction,
+  FactionRelation,
+  PlayerFactionReputation,
+  FactionAction,
+  ReputationTier
+} from "@dnd/shared";
 
 export interface LobbyCampaign extends Campaign {
   role: "player" | "dm";
@@ -34,6 +46,13 @@ interface GameState {
   activeRoll: ServerMessageMap["DICE_RESULT"] | null;
   rollQueue: ServerMessageMap["DICE_RESULT"][];
 
+  // Faction state variables
+  factions: Faction[];
+  relations: FactionRelation[];
+  reputations: PlayerFactionReputation[];
+  factionActions: FactionAction[];
+  factionEnginePaused: boolean;
+
   setCampaigns: (campaigns: LobbyCampaign[]) => void;
   setActiveCampaign: (campaign: LobbyCampaign | null, role: "player" | "dm" | null) => void;
   setPartyCharacters: (chars: Character[]) => void;
@@ -46,6 +65,13 @@ interface GameState {
   setLocations: (locations: Location[]) => void;
   enqueueRoll: (roll: ServerMessageMap["DICE_RESULT"]) => void;
   dismissActiveRoll: () => void;
+
+  // Faction actions
+  setFactions: (factions: Faction[]) => void;
+  setRelations: (relations: FactionRelation[]) => void;
+  setReputations: (reputations: PlayerFactionReputation[]) => void;
+  setFactionActions: (actions: FactionAction[]) => void;
+  setFactionEnginePaused: (paused: boolean) => void;
   handleWsMessage: (message: ServerWSMessage<ServerMessageType>, userId: string, fetchParty: (id: string) => void) => void;
   reset: () => void;
 }
@@ -63,6 +89,13 @@ const initialState = {
   locations: [] as Location[],
   activeRoll: null as ServerMessageMap["DICE_RESULT"] | null,
   rollQueue: [] as ServerMessageMap["DICE_RESULT"][],
+
+  // Factions initial state
+  factions: [] as Faction[],
+  relations: [] as FactionRelation[],
+  reputations: [] as PlayerFactionReputation[],
+  factionActions: [] as FactionAction[],
+  factionEnginePaused: false,
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -106,8 +139,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     };
   }),
 
+  // Faction setters
+  setFactions: (factions) => set({ factions }),
+  setRelations: (relations) => set({ relations }),
+  setReputations: (reputations) => set({ reputations }),
+  setFactionActions: (factionActions) => set({ factionActions }),
+  setFactionEnginePaused: (factionEnginePaused) => set({ factionEnginePaused }),
+
   handleWsMessage: (message, userId, fetchParty) => {
-    const { activeCampaign, appendEvent } = get();
+    const { activeCampaign, appendEvent, factions, reputations, factionActions } = get();
     if (!activeCampaign) return;
 
     switch (message.type) {
@@ -199,6 +239,93 @@ export const useGameStore = create<GameState>((set, get) => ({
           payload: { text: `⚠️ Server error: ${errorPayload.message}` },
           timestamp: new Date().toISOString(),
         });
+        break;
+      }
+
+      // Faction WS events
+      case "FACTION_UPDATE": {
+        const payload = message.payload as ServerMessageMap["FACTION_UPDATE"];
+        const updated = factions.map((f) => (f.id === payload.faction.id ? payload.faction : f));
+        if (!factions.find((f) => f.id === payload.faction.id)) {
+          updated.push(payload.faction);
+        }
+        set({ factions: updated });
+        break;
+      }
+      case "FACTION_ACTION_RESOLVED": {
+        const payload = message.payload as ServerMessageMap["FACTION_ACTION_RESOLVED"];
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: payload.narrative },
+          timestamp: new Date().toISOString(),
+        });
+        // Update action roster
+        const updatedActions = factionActions.map((a) => (a.id === payload.action.id ? payload.action : a));
+        if (!factionActions.find((a) => a.id === payload.action.id)) {
+          updatedActions.unshift(payload.action);
+        }
+        set({ factionActions: updatedActions });
+        break;
+      }
+      case "FACTION_WAR_DECLARED": {
+        const payload = message.payload as ServerMessageMap["FACTION_WAR_DECLARED"];
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: `⚔️ ${payload.narrative}` },
+          timestamp: new Date().toISOString(),
+        });
+        break;
+      }
+      case "FACTION_TREATY_SIGNED": {
+        const payload = message.payload as ServerMessageMap["FACTION_TREATY_SIGNED"];
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: `📜 ${payload.narrative}` },
+          timestamp: new Date().toISOString(),
+        });
+        break;
+      }
+      case "FACTION_COLLAPSED": {
+        const payload = message.payload as ServerMessageMap["FACTION_COLLAPSED"];
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: `🏚️ ${payload.narrative}` },
+          timestamp: new Date().toISOString(),
+        });
+        const updated = factions.map((f) => (f.id === payload.faction_id ? { ...f, collapsed: true } : f));
+        set({ factions: updated });
+        break;
+      }
+      case "FACTION_VICTORY": {
+        const payload = message.payload as ServerMessageMap["FACTION_VICTORY"];
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: `👑 ${payload.narrative}` },
+          timestamp: new Date().toISOString(),
+        });
+        const updated = factions.map((f) => (f.id === payload.faction_id ? { ...f, is_victorious: true } : f));
+        set({ factions: updated });
+        break;
+      }
+      case "PLAYER_REP_CHANGED": {
+        const payload = message.payload as ServerMessageMap["PLAYER_REP_CHANGED"];
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: `👤 ${payload.narrative}` },
+          timestamp: new Date().toISOString(),
+        });
+        const updated = reputations.map((r) =>
+          r.character_id === payload.character_id && r.faction_id === payload.faction_id
+            ? { ...r, score: payload.score, tier: payload.tier as ReputationTier }
+            : r
+        );
+        set({ reputations: updated });
         break;
       }
     }

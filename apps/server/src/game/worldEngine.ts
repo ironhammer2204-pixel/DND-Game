@@ -18,6 +18,7 @@ import {
   getNemesisById, 
   recordNemesisHistory 
 } from "./nemesisEngine.js";
+import { runFactionCycle } from "./factionEngine.js";
 
 // Helper to convert DB row to Nemesis matching nemesisEngine format
 function rowToNemesis(row: any): Nemesis {
@@ -931,7 +932,7 @@ export async function runWorldHeartbeat(
 ): Promise<void> {
   try {
     await tickNemesisMovement(client, campaignId, isRestAction);
-    await tickFactionPressure(client, campaignId);
+    await runFactionCycle(client, campaignId, false);
     await tickNpcAgendas(client, campaignId);
     await checkLocationUnlocks(client, campaignId);
     await checkQuestTriggers(client, campaignId);

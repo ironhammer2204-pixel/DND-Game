@@ -9,6 +9,7 @@ import authRouter from "./routes/auth";
 import campaignRouter from "./routes/campaigns";
 import characterRouter from "./routes/characters";
 import nemesisRouter from "./routes/nemeses";
+import factionRouter from "./routes/factions";
 import { authMiddleware, AuthenticatedRequest } from "./middleware/auth";
 import { authenticateSocket, handleWSMessage } from "./websocket/eventHandlers";
 import { RoomManager } from "./websocket/roomManager";
@@ -25,6 +26,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/campaigns", campaignRouter);
 app.use("/api/characters", characterRouter);
 app.use("/api/campaigns", nemesisRouter);
+app.use("/api/campaigns", factionRouter);
 
 app.get("/api/auth/me", authMiddleware, (req: AuthenticatedRequest, res) => {
   res.json({ message: "Access granted", user: req.user });

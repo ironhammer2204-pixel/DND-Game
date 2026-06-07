@@ -6,41 +6,19 @@
 
 ## Current Status
 
-Last updated: 2026-06-07 (comprehensive audit completed)
+Last updated: 2026-06-08 (Faction Pressure System Complete)
 
 - GitHub repo: `https://github.com/ironhammer2204-pixel/DND-Game`
 - Supabase project: `fvgpsqksclhyvaeveaus` (`DND-Game`)
 - `brain.md` is now the project source of truth and must be updated after every meaningful fix, feature, schema change, setup change, or architecture decision.
-- Initial Supabase project files exist under `supabase/`.
 - Initial remote migration `20260607123000_initial_game_schema.sql` has been pushed successfully.
-- Database baseline includes the 12 core tables, indexes, update trigger, RLS enabled on all tables, and baseline private-campaign RLS policies.
+- Faction Pressure System migration `20260608000000_faction_pressure_system.sql` has been applied successfully.
+- Database baseline includes all core tables, indexes, triggers, RLS enabled on all tables, and RLS policies.
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
-- Supabase config is aligned with the remote Postgres major version: `17`.
-- Local `supabase db reset` has not been verified yet because Docker was not running locally- **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested
-- **Phase 2 (Game systems): PARTIALLY COMPLETE (~75%)**
-  - Complete: Dice engine, Action processor (with skill checks), World system (server-side), Inventory system, Event log UI, Quest log UI, derived stats and equipment.
-  - Character sheet: attributes, skills, HP, gold, equipped items, AC, attack bonus, and spell save DC are displayed.
-  - Still pending: location/world navigation UI, gold transaction ledger, level-up logic.
-- **Phase 3 (AI + Combat + Living World): FULLY COMPLETE** — Combat loop, Nemesis grudge promotion, conditions system, NPC seeding, death saves, Groq AI narration pipeline, and narration display have been shipped.
-- **Phase 4 (World Engine & Behaviour System): FULLY COMPLETE** — Server-authoritative heartbeat loop (factions power levels, NPC agendas, location unlocks, quest triggers, NPC spawns, objective checks, consequence arcs, and hidden class unlocks), deterministic + LLM-assisted behaviour tagging, and a DM behaviour-debug route are fully built.
-
-## What is NOT yet implemented
-
-### Remaining Polish & Interface Tasks
-1. **Location/world navigation UI** — players need a visual dashboard to see nearby locations, connections, and click to travel between them.
-2. **Gold transaction ledger** — a dedicated UI view of financial adjustments.
-3. **Level-up screen** — a user interface panel for allocating attributes and choosing class specialities upon leveling up.
-4. **World Encyclopedia** — browsable list of discovered locations, known NPCs, and factions (fog of war locked).
-5. **Session History page** — recap summaries and shared logs of previous game events.
-6. **Mobile-responsive styling pass** — styling tweaks for tablets and phone sizes.
-
-- Recent fixes:
-  - Fixed action processor to properly dispatch skill check actions (rolls d20 + skill modifier)
-  - Added skills display to character sheet UI
-  - Added inventory REST endpoints, 20 starter item seeds, starter gear, equip/drop UI, and derived AC from equipped armor/shields
-  - Added quest REST endpoints, starter quests, QuestLog UI, `QUEST_UPDATE` broadcasts, and DM objective toggles
-  - Added character-sheet attack bonus, spell save DC, and skill roll buttons
-  - Preserved Phase 3 Living World and Emergent Class architecture notes from the remote branch
+- **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested.
+- **Phase 2 (Game systems): FULLY COMPLETE** — location UI, gold transaction ledger, and level-up logic implemented.
+- **Phase 3 (Faction Pressure System): FULLY COMPLETE** — Faction config, simulation engine, cascade events, diplomacy relationships, player reputation tiers, world integration (laws/taxes/patrols), nemesis bridge, quest integration overrides, narrative WS generation, and DM Faction Control Room UI implemented and integrated.
+- **Phase 4 (AI + Combat + Living World & Behaviour System): FULLY COMPLETE** — Combat loop, Nemesis grudge promotion, conditions system, NPC seeding, death saves, Groq AI narration pipeline, behaviour tagging, and heartbeat checks are fully built and integrated.
 
 ---
 

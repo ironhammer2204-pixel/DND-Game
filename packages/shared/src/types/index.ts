@@ -147,6 +147,9 @@ export interface NemesisScar {
   applied_at: string;
 }
 
+export type FactionType = "empire" | "merchant" | "cult" | "rebel" | "criminal" | "secret" | "neutral";
+export type FactionPersonality = "expansionist" | "merchant" | "religious" | "revolutionary" | "defensive" | "isolationist";
+
 export interface Faction {
   id: string;
   campaign_id: string;
@@ -155,7 +158,121 @@ export interface Faction {
   power_level: number;
   description?: string | null;
   created_at: string;
+  type: FactionType;
+  is_hidden: boolean;
+  military: number;
+  wealth: number;
+  influence: number;
+  stability: number;
+  pressure: number;
+  pressure_cap: number;
+  territories: number;
+  personality: FactionPersonality;
+  objectives: string[];
+  victory_condition: Record<string, any>;
+  is_victorious: boolean;
+  collapsed: boolean;
+  updated_at: string;
   nemeses?: any[];
+}
+
+export type TreatyType = "none" | "truce" | "trade" | "alliance" | "vassalage";
+
+export interface FactionRelation {
+  id: string;
+  campaign_id: string;
+  faction_a_id: string;
+  faction_b_id: string;
+  score: number;
+  treaty_type: TreatyType;
+  treaty_expires_at?: string | null;
+  updated_at: string;
+}
+
+export interface FactionTerritory {
+  id: string;
+  campaign_id: string;
+  location_id: string;
+  faction_id: string;
+  pressure_value: number;
+  control_percent: number;
+  is_claimed: boolean;
+  updated_at: string;
+}
+
+export type FactionActionType =
+  | "patrol"
+  | "raid"
+  | "siege"
+  | "invade"
+  | "fortify"
+  | "recruit"
+  | "bribe_official"
+  | "fund_trade_route"
+  | "create_shortage"
+  | "price_manipulation"
+  | "corrupt_governor"
+  | "replace_mayor"
+  | "pass_law"
+  | "assassination"
+  | "blackmail"
+  | "spy_network"
+  | "sabotage"
+  | "convert_citizens"
+  | "build_temple"
+  | "declare_holy_war";
+
+export type FactionActionStatus = "pending" | "resolved" | "vetoed" | "countered";
+
+export interface FactionAction {
+  id: string;
+  campaign_id: string;
+  faction_id: string;
+  action_type: string;
+  target_type: "location" | "npc" | "faction" | "trade_route" | "player";
+  target_id: string;
+  pressure_cost: number;
+  status: FactionActionStatus;
+  result: Record<string, any>;
+  cooldown_until?: string | null;
+  triggered_by: "engine" | "dm" | "player_action" | "cascade";
+  parent_action_id?: string | null;
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface FactionPressureLog {
+  id: string;
+  campaign_id: string;
+  faction_id: string;
+  cycle_number: number;
+  pressure_generated: number;
+  pressure_spent: number;
+  pressure_decayed: number;
+  actions_taken: any[];
+  logged_at: string;
+}
+
+export type ReputationTier = "unknown" | "watched" | "wanted" | "hunted" | "champion" | "legend";
+
+export interface PlayerFactionReputation {
+  id: string;
+  campaign_id: string;
+  character_id: string;
+  faction_id: string;
+  score: number;
+  tier: ReputationTier;
+  bounty_amount: number;
+  updated_at: string;
+}
+
+export interface NpcFactionAlignment {
+  id: string;
+  npc_id: string;
+  faction_id: string;
+  alignment_score: number;
+  is_agent: boolean;
+  updated_at: string;
 }
 
 export interface Nemesis {
@@ -295,7 +412,12 @@ export type ClientMessageType =
   | "COMBAT_ACTION"
   | "START_COMBAT"
   | "DEATH_SAVE_ROLL"
-  | "UPDATE_CONDITIONS";
+  | "UPDATE_CONDITIONS"
+  | "VETO_FACTION_ACTION"
+  | "FORCE_FACTION_ACTION"
+  | "PAUSE_FACTION_ENGINE"
+  | "SET_FACTION_RELATION"
+  | "TRIGGER_FACTION_EVENT";
 
 export interface ClientMessageMap {
   ACTION_SUBMIT: {
@@ -331,6 +453,29 @@ export interface ClientMessageMap {
     condition: "poisoned" | "stunned" | "paralysed" | "dodging";
     action: "add" | "remove";
   };
+  VETO_FACTION_ACTION: {
+    action_id: string;
+  };
+  FORCE_FACTION_ACTION: {
+    faction_id: string;
+    action_type: string;
+    target_type: "location" | "npc" | "faction" | "trade_route" | "player";
+    target_id: string;
+  };
+  PAUSE_FACTION_ENGINE: {
+    pause: boolean;
+  };
+  SET_FACTION_RELATION: {
+    faction_a_id: string;
+    faction_b_id: string;
+    score: number;
+    treaty_type: string;
+    expires_in_days?: number;
+  };
+  TRIGGER_FACTION_EVENT: {
+    faction_id: string;
+    event_type: string;
+  };
 }
 
 export type ServerMessageType =
@@ -345,6 +490,12 @@ export type ServerMessageType =
   | "NEMESIS_UPDATE"
   | "NEMESIS_AMBUSH"
   | "FACTION_UPDATE"
+  | "FACTION_ACTION_RESOLVED"
+  | "FACTION_WAR_DECLARED"
+  | "FACTION_TREATY_SIGNED"
+  | "FACTION_COLLAPSED"
+  | "FACTION_VICTORY"
+  | "PLAYER_REP_CHANGED"
   | "ERROR";
 
 export interface ServerMessageMap {
@@ -404,6 +555,36 @@ export interface ServerMessageMap {
   };
   FACTION_UPDATE: {
     faction: Faction;
+  };
+  FACTION_ACTION_RESOLVED: {
+    action: FactionAction;
+    narrative: string;
+  };
+  FACTION_WAR_DECLARED: {
+    faction_a_id: string;
+    faction_b_id: string;
+    narrative: string;
+  };
+  FACTION_TREATY_SIGNED: {
+    faction_a_id: string;
+    faction_b_id: string;
+    treaty_type: string;
+    narrative: string;
+  };
+  FACTION_COLLAPSED: {
+    faction_id: string;
+    narrative: string;
+  };
+  FACTION_VICTORY: {
+    faction_id: string;
+    narrative: string;
+  };
+  PLAYER_REP_CHANGED: {
+    character_id: string;
+    faction_id: string;
+    score: number;
+    tier: string;
+    narrative: string;
   };
   ERROR: {
     code: string;

@@ -5,6 +5,7 @@ import { RoomManager } from "../websocket/roomManager";
 import { dmService } from "../ai/dmService";
 import { buildCampaignSnapshot } from "../ai/contextBuilder";
 import { tickNpcAgendas } from "./npcAgendaEngine";
+import { updatePlayerReputation } from "./factionEngine";
 import {
   EPITHETS,
   PERSONALITY_PRESETS,
@@ -350,6 +351,32 @@ export async function evaluateCombatForNemesisPromotion(client: PoolClient, enco
         });
         RoomManager.broadcastToRoom(encounter.campaign_id, "NEMESIS_UPDATE", { nemesis, history_entry: history, reason: "killed" });
         await handleNemesisQuestIntegration(client, encounter.campaign_id, nemesis, "killed");
+        
+        // Apply -20 faction relation drop on nemesis death
+        if (nemesis.faction_id) {
+          const players = encounter.participants.filter((p) => p.type === "player");
+          for (const player of players) {
+            const repCheck = await client.query(
+              "SELECT id, score FROM public.player_faction_reputation WHERE campaign_id = $1 AND character_id = $2 AND faction_id = $3",
+              [encounter.campaign_id, player.id, nemesis.faction_id]
+            );
+            if (repCheck.rows.length > 0) {
+              const nextScore = Math.max(-100, repCheck.rows[0].score - 20);
+              await client.query(
+                "UPDATE public.player_faction_reputation SET score = $1 WHERE id = $2",
+                [nextScore, repCheck.rows[0].id]
+              );
+            } else {
+              await client.query(
+                `INSERT INTO public.player_faction_reputation (campaign_id, character_id, faction_id, score, tier)
+                 VALUES ($1, $2, $3, -20, 'unknown')`,
+                [encounter.campaign_id, player.id, nemesis.faction_id]
+              );
+            }
+          }
+          await updatePlayerReputation(client, encounter.campaign_id);
+        }
+
         // Auto-assign grudge to a successor if one is available
         await assignSuccessor(client, encounter.campaign_id, nemesis.id);
       }
@@ -696,3 +723,4 @@ export async function handleNemesisQuestIntegration(
     console.error("handleNemesisQuestIntegration error:", err);
   }
 }
+
