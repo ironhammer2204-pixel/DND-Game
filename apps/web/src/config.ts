@@ -1,5 +1,5 @@
 const IS_PROD = import.meta.env.PROD;
-const PROD_API_URL = "http://fzxyr-106-212-32-161.run.pinggy-free.link";
+const PROD_API_URL = "https://fzxyr-106-212-32-161.run.pinggy-free.link";
 
 const DEFAULT_API_URL = IS_PROD ? PROD_API_URL : "http://localhost:3001";
 const DEFAULT_WS_URL = IS_PROD
@@ -27,6 +27,7 @@ const API_CANDIDATES = Array.from(
       IS_PROD ? PROD_API_URL : undefined,
       !IS_PROD ? window.location.origin : undefined,
       "http://localhost:3001",
+      "https://fzxyr-106-212-32-161.run.pinggy-free.link",
     ].filter(
       (value): value is string =>
         typeof value === "string" && value.trim().length > 0 && !isTunnelUrl(value)
