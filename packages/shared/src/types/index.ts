@@ -110,6 +110,7 @@ export interface NPC {
 export interface QuestObjective {
   text: string;
   completed: boolean;
+  nemesis_id?: string;
 }
 
 export interface Quest {
@@ -124,6 +125,80 @@ export interface Quest {
   giver_npc_id?: string | null;
   created_at: string;
   completed_at?: string | null;
+}
+
+export type NemesisTier = "soldier" | "lieutenant" | "warlord" | "archnemesis";
+export type NemesisStatus = "active" | "dead" | "retired" | "missing" | "ambushing";
+export type NemesisPersonality =
+  | "brutal"
+  | "cowardly"
+  | "cunning"
+  | "honorable"
+  | "vengeful"
+  | "warlord"
+  | "paranoid";
+
+export interface NemesisScar {
+  type: string;
+  label: string;
+  effect: string;
+  applied_at: string;
+}
+
+export interface Faction {
+  id: string;
+  campaign_id: string;
+  name: string;
+  disposition: "hostile" | "neutral" | "rival" | "allied";
+  power_level: number;
+  description?: string | null;
+  created_at: string;
+  nemeses?: any[];
+}
+
+export interface Nemesis {
+  id: string;
+  campaign_id: string;
+  source_monster_id?: string | null;
+  name: string;
+  epithet?: string | null;
+  tier: NemesisTier;
+  status: NemesisStatus;
+  level: number;
+  xp: number;
+  personality: NemesisPersonality;
+  traits: Record<string, any>;
+  tactics: Record<string, any>;
+  stats: Record<string, any>;
+  scars: NemesisScar[];
+  appearance: Record<string, any>;
+  faction_id?: string | null;
+  minion_ids: string[];
+  location_id?: string | null;
+  target_character_id?: string | null;
+  grudge_score: number;
+  bounty_on_party: number;
+  successor_nemesis_id?: string | null;
+  promoted_from_nemesis_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  last_seen_at?: string | null;
+  faction_name?: string | null;
+  location_name?: string | null;
+  target_character_name?: string | null;
+}
+
+export interface NemesisHistoryEntry {
+  id: string;
+  nemesis_id: string;
+  campaign_id: string;
+  encounter_id?: string | null;
+  event_type: string;
+  actor_character_id?: string | null;
+  summary: string;
+  mechanical_data: Record<string, any>;
+  occurred_at: string;
+  actor_character_name?: string | null;
 }
 
 export interface Location {
@@ -152,6 +227,16 @@ export interface CombatParticipant {
   damage_dice: string;
   damage_modifier: number;
   xp_value?: number;
+  source_monster_id?: string;
+  nemesis_id?: string;
+  nemesis_tier?: NemesisTier;
+  personality?: NemesisPersonality;
+  grudge_target_id?: string;
+  damage_dealt?: number;
+  damage_taken?: number;
+  downed_character_ids?: string[];
+  scars?: NemesisScar[];
+  minion_ids?: string[];
 }
 
 
@@ -249,6 +334,9 @@ export type ServerMessageType =
   | "PLAYER_LEFT"
   | "QUEST_UPDATE"
   | "WORLD_UPDATE"
+  | "NEMESIS_UPDATE"
+  | "NEMESIS_AMBUSH"
+  | "FACTION_UPDATE"
   | "ERROR";
 
 export interface ServerMessageMap {
@@ -295,6 +383,19 @@ export interface ServerMessageMap {
     from_location?: string;
     to_location?: string;
     changes: Record<string, any>;
+  };
+  NEMESIS_UPDATE: {
+    nemesis: Nemesis;
+    history_entry?: NemesisHistoryEntry;
+    reason?: string;
+  };
+  NEMESIS_AMBUSH: {
+    nemesis: Nemesis;
+    location_id?: string | null;
+    message: string;
+  };
+  FACTION_UPDATE: {
+    faction: Faction;
   };
   ERROR: {
     code: string;

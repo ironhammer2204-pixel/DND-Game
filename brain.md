@@ -1,4 +1,4 @@
-﻿# brain.md â€” AI Multiplayer D&D Game: Final Draft Plan
+# brain.md â€” AI Multiplayer D&D Game: Final Draft Plan
 
 > Zero-cost stack. No local models. No credit card required. Built for a private friend group of up to 10 players.
 
@@ -881,27 +881,29 @@ Respond with 2â€“4 paragraphs of narration only. No meta-commentary.
 - [ ] Show dice rolls animated in UI during combat
 
 #### Nemesis System
-- [ ] Build `nemesisEngine.ts` â€” handles enemy promotion, memory, and personality
-- [ ] After combat: check if any enemies survived; promote to nemesis with level up
-- [ ] Track nemesis history: [ { event, result, damage_dealt_to_them, damage_taken } ]
-- [ ] Add target_character_id: if a player nearly killed them, set grudge to that player
-- [ ] Generate nemesis personality (brutal, cowardly, cunning, honorable) â€” affects tactics
-- [ ] Nemesis AI: if has grudge against player X, prioritize attacking X, mock them by name
-- [ ] On nemesis death: promote their lieutenant (auto-generate or use a sub-boss)
-- [ ] Build nemesis gallery UI â€” show party's nemeses, their history, personality
+- [x] Build `nemesisEngine.ts` — handles enemy promotion, memory, and personality
+- [x] After combat: check if any enemies survived; promote to nemesis with level up, scars, and grudge selection
+- [x] Track nemesis history: database table `nemesis_history` with full encounter logs
+- [x] Add target_character_id: targets player with highest impact or who downed them
+- [x] Generate nemesis personality (brutal, cowardly, cunning, honorable, vengeful, warlord, paranoid) — affects tactics and target selection
+- [x] Nemesis AI: custom targeting rules and minion command logic per personality/tier
+- [x] On nemesis death: successor system assigns grudge, bounty, and successor links
+- [x] Build nemesis gallery UI — premium frontend gallery with card grids, timelines, and DM controls
 
 #### Faction Pressure System
 - [ ] Create base factions for starter world (Order of the Cloaked Flame, Blackwater Syndicate, Merchant's Guild, Druidic Circle)
-- [ ] Build `factionEngine.ts` â€” tracks power, disposition, goals
+- [ ] Build `factionEngine.ts` — tracks power, disposition, goals
 - [ ] Implement power calculation: faction gains power when they control locations/defeat enemies, lose it when locations are liberated
 - [ ] Implement disposition calculation: changes based on party actions for/against that faction
 - [ ] Build faction_events trigger system: when power crosses thresholds (50, 70, 90), fire corresponding actions
 - [ ] Action types: 'seize_location', 'send_assassin', 'offer_contract', 'siege', 'install_ruler'
 - [ ] Persist faction_events to DB; show in world_tick_log
 
-#### World Heartbeat â€” Simulation Tick
-- [ ] Build `worldHeartbeat.ts` â€” runs on session start (or daily if using real-time scheduling)
-- [ ] Tick nemesis movement: move active nemeses between locations based on party location
+#### World Heartbeat — Simulation Tick
+- [/] Build `worldHeartbeat.ts` — integrated nemesis movement and rest ambushes into action processor
+- [x] Tick nemesis movement: move active nemeses between locations based on grudge and faction coordination
+- [x] Grudge-biased rest ambush: high grudge triggers ambush on party rest
+- [x] Warlord location control: warlord-tier nemeses claim locations under `nemesis_controlled` flags
 - [ ] Tick faction power: update based on current controlled locations and goals
 - [ ] Tick faction events: fire any events with trigger_condition met
 - [ ] Tick NPC agendas: update short-term goal progress; if stuck, trigger NPC-initiated world event

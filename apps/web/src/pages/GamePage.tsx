@@ -3,9 +3,10 @@ import { useAuthStore } from "../stores/authStore";
 import { useGameStore } from "../stores/gameStore";
 import { WsReconnectBanner } from "../components/WsReconnectBanner";
 import { DicePanel } from "../components/DicePanel";
+import { NemesisGallery } from "../components/NemesisGallery";
 import { RACES, CLASSES } from "@dnd/shared";
 import { API_URL, WS_URL } from "../config";
-import type { Character, DiceType, Quest, ServerWSMessage, ServerMessageType } from "@dnd/shared";
+import type { Character, DiceType, Quest, Nemesis, Faction, ServerWSMessage, ServerMessageType } from "@dnd/shared";
 import type React from "react";
 
 interface ChatPayload { sender_name: string; text: string; }
@@ -63,6 +64,12 @@ export function GamePage() {
   const [questError, setQuestError] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Nemesis system state
+  const [nemeses, setNemeses] = useState<Nemesis[]>([]);
+  const [factions, setFactions] = useState<Faction[]>([]);
+  const [ambushAlert, setAmbushAlert] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"chat" | "nemesis">("chat");
+
   // Combat spawning local states
   const [selectedMonster, setSelectedMonster] = useState("goblin");
   const [monsterCount, setMonsterCount] = useState(1);
@@ -116,6 +123,20 @@ export function GamePage() {
     }
   };
 
+  const fetchNemeses = async (campaignId: string) => {
+    try {
+      const data = await apiFetch(`/api/campaigns/${campaignId}/nemeses`);
+      setNemeses(data.nemeses ?? []);
+    } catch (err) { console.error("Error fetching nemeses:", err); }
+  };
+
+  const fetchFactions = async (campaignId: string) => {
+    try {
+      const data = await apiFetch(`/api/campaigns/${campaignId}/factions`);
+      setFactions(data.factions ?? []);
+    } catch (err) { console.error("Error fetching factions:", err); }
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [eventLogs]);
@@ -126,6 +147,8 @@ export function GamePage() {
     const loadTimer = window.setTimeout(() => {
       void fetchPartyCharacters(activeCampaign.id);
       void fetchQuests(activeCampaign.id);
+      void fetchNemeses(activeCampaign.id);
+      void fetchFactions(activeCampaign.id);
     }, 0);
     setWsStatus("connecting");
     const socket = new WebSocket(`${WS_URL}?token=${token}`);
@@ -146,6 +169,25 @@ export function GamePage() {
             return existing
               ? current.map((item) => (item.id === quest.id ? quest : item))
               : [...current, quest];
+          });
+        }
+        if (message.type === "NEMESIS_UPDATE") {
+          const { nemesis } = message.payload as { nemesis: Nemesis };
+          setNemeses((prev) => {
+            const idx = prev.findIndex((n) => n.id === nemesis.id);
+            return idx >= 0 ? prev.map((n, i) => (i === idx ? nemesis : n)) : [...prev, nemesis];
+          });
+        }
+        if (message.type === "NEMESIS_AMBUSH") {
+          const { message: msg } = message.payload as { message: string };
+          setAmbushAlert(msg);
+          setTimeout(() => setAmbushAlert(null), 8000);
+        }
+        if (message.type === "FACTION_UPDATE") {
+          const { faction } = message.payload as { faction: Faction };
+          setFactions((prev) => {
+            const idx = prev.findIndex((f) => f.id === faction.id);
+            return idx >= 0 ? prev.map((f, i) => (i === idx ? faction : f)) : [...prev, faction];
           });
         }
       } catch (err) { console.error("WS parse error:", err); }
@@ -386,7 +428,49 @@ export function GamePage() {
         </aside>
 
         <main className="chat-column" aria-label="Game events and chat">
-          {activeCombat && (
+          {ambushAlert && (
+            <div className="ambush-alert" role="alert">
+              <span className="ambush-alert__icon">⚠️</span>
+              <span>{ambushAlert}</span>
+              <button className="ambush-alert__close" onClick={() => setAmbushAlert(null)}>✕</button>
+            </div>
+          )}
+
+          <div className="chat-tab-bar">
+            <button
+              className={`chat-tab-btn ${activeTab === "chat" ? "chat-tab-btn--active" : ""}`}
+              onClick={() => setActiveTab("chat")}
+            >💬 Events</button>
+            <button
+              className={`chat-tab-btn ${activeTab === "nemesis" ? "chat-tab-btn--active" : ""}`}
+              onClick={() => setActiveTab("nemesis")}
+            >
+              ⚔️ Nemeses
+              {nemeses.filter((n) => n.status === "active" || n.status === "ambushing").length > 0 && (
+                <span className="nemesis-tab-count">
+                  {nemeses.filter((n) => n.status === "active" || n.status === "ambushing").length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {activeTab === "nemesis" ? (
+            <div className="nemesis-gallery-wrapper">
+              <NemesisGallery
+                campaignId={activeCampaign.id}
+                token={token ?? ""}
+                nemeses={nemeses}
+                factions={factions}
+                isDM={activeRole === "dm"}
+                onUpdate={() => {
+                  void fetchNemeses(activeCampaign.id);
+                  void fetchFactions(activeCampaign.id);
+                }}
+              />
+            </div>
+          ) : null}
+
+          {activeTab === "chat" && activeCombat && (
             <div className="combat-tracker-panel animate-fade-in" style={{ padding: "12px", borderBottom: "1px solid var(--border-dark)", background: "rgba(10, 11, 20, 0.7)", backdropFilter: "blur(8px)" }}>
               <div className="combat-tracker-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                 <div className="combat-tracker-title" style={{ display: "flex", alignItems: "center", gap: "6px", fontFamily: "var(--font-cinzel)", fontWeight: "bold", color: "var(--accent-gold)" }}>
@@ -526,7 +610,7 @@ export function GamePage() {
             </div>
           )}
 
-          <div className="chat-log" role="log" aria-live="polite" aria-atomic="false">
+          {activeTab === "chat" && <div className="chat-log" role="log" aria-live="polite" aria-atomic="false">
             {eventLogs.map((log) => {
               if (log.type === "system") {
                 const p = log.payload as { text: string };
@@ -573,9 +657,9 @@ export function GamePage() {
               return null;
             })}
             <div ref={chatEndRef} />
-          </div>
+          </div>}
 
-          <form className="chat-input-bar" onSubmit={sendChat} aria-label="Send a message">
+          {activeTab === "chat" && <form className="chat-input-bar" onSubmit={sendChat} aria-label="Send a message">
             <input type="text" className="input-field chat-input-bar__input"
               placeholder={wsStatus !== "connected" ? "Connecting..." : "Type a message or describe your action..."}
               value={chatMessage} onChange={(e) => setChatMessage(e.target.value)}
@@ -583,7 +667,7 @@ export function GamePage() {
             <button type="submit" className="btn btn-primary" disabled={wsStatus !== "connected" || !chatMessage.trim()}>
               Send
             </button>
-          </form>
+          </form>}
         </main>
 
         <aside className="sidebar-right" aria-label={activeRole === "dm" ? "DM Panel" : "Character panel"}>

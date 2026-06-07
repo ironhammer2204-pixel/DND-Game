@@ -1,0 +1,407 @@
+/* ─── NemesisGallery — Dark Fantasy UI ─────────────────────────────────────── */
+
+.ng-gallery {
+  padding: 1.5rem;
+  color: #e8dcc8;
+}
+
+.ng-gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.2rem;
+}
+
+.ng-gallery-header h2 {
+  font-family: "Cinzel Decorative", "Cinzel", serif;
+  font-size: 1.4rem;
+  color: #f0c060;
+  margin: 0;
+  text-shadow: 0 0 12px rgba(240, 192, 96, 0.4);
+}
+
+.ng-count {
+  font-size: 0.8rem;
+  color: #c05060;
+  background: rgba(192, 80, 96, 0.15);
+  border: 1px solid rgba(192, 80, 96, 0.3);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+}
+
+/* ─── Faction bar ─────────────────────────────────────── */
+.ng-factions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.ng-faction-chip {
+  font-size: 0.72rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.ng-faction-chip span { opacity: 0.7; font-weight: 400; }
+.ng-faction-hostile  { background: rgba(192,80,96,0.15); border-color: rgba(192,80,96,0.4); color: #f08090; }
+.ng-faction-neutral  { background: rgba(120,120,140,0.15); border-color: rgba(120,120,140,0.4); color: #a0a0b0; }
+.ng-faction-rival    { background: rgba(192,140,60,0.15); border-color: rgba(192,140,60,0.4); color: #f0b060; }
+.ng-faction-allied   { background: rgba(80,160,120,0.15); border-color: rgba(80,160,120,0.4); color: #70c0a0; }
+
+/* ─── Card grid ─────────────────────────────────────────────── */
+.ng-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.ng-card {
+  background: linear-gradient(160deg, rgba(30,20,15,0.95), rgba(20,15,10,0.98));
+  border: 1px solid rgba(240,192,96,0.18);
+  border-radius: 10px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.ng-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(240,192,96,0.04), transparent 60%);
+  pointer-events: none;
+}
+.ng-card:hover {
+  border-color: rgba(240,192,96,0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 16px rgba(240,192,96,0.08);
+}
+.ng-card-faded { opacity: 0.55; filter: grayscale(0.5); }
+.ng-card-faded:hover { opacity: 0.75; filter: grayscale(0.2); }
+
+.ng-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.ng-card-tier {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  color: #0a0a0a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ng-card-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.ng-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.ng-card-personality-icon { font-size: 1.5rem; }
+
+.ng-card-name {
+  font-family: "Cinzel", serif;
+  font-size: 0.95rem;
+  color: #f0d080;
+  font-weight: 600;
+}
+
+.ng-card-epithet {
+  font-size: 0.7rem;
+  color: #a89070;
+  font-style: italic;
+}
+
+.ng-card-stats {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.ng-card-stat {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  padding: 0.3rem;
+  text-align: center;
+}
+.ng-card-stat span { display: block; font-size: 0.6rem; color: #887766; }
+.ng-card-stat strong { font-size: 0.8rem; color: #e8d0a0; }
+.ng-grudge { color: #f06070 !important; }
+
+.ng-card-xp-bar {
+  height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+}
+.ng-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f0c060, #c08030);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.ng-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.ng-faction-tag {
+  font-size: 0.62rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.ng-faction-tag.ng-faction-hostile { background: rgba(192,80,96,0.2); color: #f08090; }
+.ng-faction-tag.ng-faction-neutral { background: rgba(120,120,140,0.2); color: #a0a0b0; }
+.ng-faction-tag.ng-faction-rival   { background: rgba(192,140,60,0.2); color: #f0b060; }
+.ng-faction-tag.ng-faction-allied  { background: rgba(80,160,120,0.2); color: #70c0a0; }
+
+.ng-target-tag {
+  font-size: 0.62rem;
+  color: #c080f0;
+  padding: 0.15rem 0.4rem;
+  background: rgba(192,128,240,0.1);
+  border-radius: 4px;
+}
+.ng-scars-tag { font-size: 0.8rem; margin-left: auto; }
+
+.ng-ambush-pulse {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #f0b050;
+  animation: ambush-blink 1s ease-in-out infinite;
+  margin-left: auto;
+}
+@keyframes ambush-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ─── Empty state ────────────────────────────────────── */
+.ng-empty-gallery {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: #665544;
+}
+.ng-empty-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+.ng-empty-gallery p { font-style: italic; }
+
+/* ─── Detail view ─────────────────────────────────────── */
+.ng-detail {
+  padding: 1.5rem;
+  color: #e8dcc8;
+}
+
+.ng-back {
+  background: none;
+  border: 1px solid rgba(240,192,96,0.25);
+  color: #c0a060;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+  transition: all 0.2s;
+}
+.ng-back:hover { border-color: rgba(240,192,96,0.5); color: #f0c060; }
+
+.ng-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.ng-tier-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  color: #0a0a0a;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ng-detail-title h2 {
+  font-family: "Cinzel", serif;
+  font-size: 1.4rem;
+  color: #f0d080;
+  margin: 0 0 0.2rem;
+}
+.ng-epithet {
+  font-size: 0.85rem;
+  color: #a89070;
+  font-style: italic;
+}
+
+.ng-status-dot {
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(255,255,255,0.06);
+  margin-left: auto;
+}
+
+.ng-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+@media (max-width: 700px) {
+  .ng-detail-grid { grid-template-columns: 1fr; }
+}
+
+.ng-detail-col { display: flex; flex-direction: column; gap: 1rem; }
+
+.ng-section {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 1rem;
+}
+.ng-section h3 {
+  font-family: "Cinzel", serif;
+  font-size: 0.85rem;
+  color: #f0c060;
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(240,192,96,0.15);
+  padding-bottom: 0.5rem;
+}
+
+.ng-stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.ng-stat-row span:first-child { color: #887766; }
+.ng-stat-row span:last-child { color: #e8d0a0; font-weight: 600; }
+
+.ng-scar-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.ng-scar-icon { font-size: 1.1rem; }
+.ng-scar-label { font-size: 0.82rem; color: #f08080; font-weight: 600; }
+.ng-scar-effect { font-size: 0.75rem; color: #887060; }
+
+/* ─── History ────────────────────────────────────────── */
+.ng-history-section { max-height: 340px; overflow-y: auto; }
+.ng-history-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.ng-history-item {
+  background: rgba(255,255,255,0.03);
+  border-left: 3px solid rgba(240,192,96,0.3);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 6px 6px 0;
+}
+.ng-history-item p { margin: 0.25rem 0; font-size: 0.82rem; color: #c8b898; }
+.ng-history-type {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #f0c060;
+}
+.ng-history-date { font-size: 0.65rem; color: #665544; }
+
+.ng-event-nemesis-killed { border-left-color: #c05060; }
+.ng-event-nemesis-promoted { border-left-color: #f0c060; }
+.ng-event-nemesis-scarred { border-left-color: #f08040; }
+.ng-event-nemesis-tiered-up { border-left-color: #9b3aef; }
+.ng-event-nemesis-ambush-triggered { border-left-color: #f0b050; }
+.ng-event-nemesis-successor-named { border-left-color: #c080f0; }
+.ng-event-dm-note { border-left-color: #6090c0; }
+
+/* ─── DM Controls ─────────────────────────────────────── */
+.ng-dm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.ng-dm-btn {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+}
+.ng-dm-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.ng-btn-green  { border-color: #6adb8a; color: #6adb8a; }
+.ng-btn-green:hover:not(:disabled)  { background: rgba(106,219,138,0.12); }
+.ng-btn-blue   { border-color: #6090e0; color: #6090e0; }
+.ng-btn-blue:hover:not(:disabled)   { background: rgba(96,144,224,0.12); }
+.ng-btn-red    { border-color: #e06070; color: #e06070; }
+.ng-btn-red:hover:not(:disabled)    { background: rgba(224,96,112,0.12); }
+.ng-btn-orange { border-color: #e0a040; color: #e0a040; }
+.ng-btn-orange:hover:not(:disabled) { background: rgba(224,160,64,0.12); }
+.ng-btn-purple { border-color: #a060e0; color: #a060e0; width: 100%; }
+.ng-btn-purple:hover:not(:disabled) { background: rgba(160,96,224,0.12); }
+
+.ng-tier-controls { margin-bottom: 1rem; }
+.ng-tier-controls label { font-size: 0.78rem; color: #887766; display: block; margin-bottom: 0.4rem; }
+.ng-tier-buttons { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.ng-tier-btn {
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: transparent;
+  color: #e8d0a0;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-width: 1px;
+  border-style: solid;
+}
+.ng-tier-btn:hover:not(:disabled) { background: rgba(255,255,255,0.08); }
+.ng-tier-active { background: rgba(255,255,255,0.1) !important; }
+.ng-tier-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ng-note-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.ng-note-form textarea {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #e8dcc8;
+  padding: 0.6rem;
+  font-size: 0.82rem;
+  resize: vertical;
+  font-family: inherit;
+}
+.ng-note-form textarea:focus { outline: none; border-color: rgba(240,192,96,0.4); }
+
+.ng-loading, .ng-empty { color: #665544; font-size: 0.85rem; text-align: center; padding: 1rem; font-style: italic; }

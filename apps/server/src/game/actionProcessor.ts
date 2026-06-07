@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from "pg";
 import { ServerMessageMap } from "@dnd/shared";
+import { runWorldHeartbeat } from "./nemesisEngine";
 
 type ActionType = "exploration" | "skill_check" | "npc_interaction" | "other";
 
@@ -219,6 +220,7 @@ export async function processPlayerAction(
     try {
       await client.query("BEGIN");
       const result = await processMovementAction(client, participant, characterName, input.target_location_id);
+      await runWorldHeartbeat(client, participant.campaignId, false);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -229,11 +231,14 @@ export async function processPlayerAction(
     }
   }
 
+  const isRestAction = text ? text.toLowerCase().includes("rest") : false;
+
   if (actionType === "skill_check") {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const result = await processSkillCheckAction(client, participant, characterName, text);
+      await runWorldHeartbeat(client, participant.campaignId, isRestAction);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -250,18 +255,29 @@ export async function processPlayerAction(
     actor_name: characterName,
   };
 
-  const logRes = await pool.query(
-    "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'exploration', $2, $3) RETURNING id, created_at",
-    [participant.campaignId, participant.characterId, JSON.stringify(payload)]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const logRes = await client.query(
+      "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'exploration', $2, $3) RETURNING id, created_at",
+      [participant.campaignId, participant.characterId, JSON.stringify(payload)]
+    );
+    await runWorldHeartbeat(client, participant.campaignId, isRestAction);
+    await client.query("COMMIT");
 
-  return {
-    event: {
-      id: logRes.rows[0].id,
-      type: "exploration",
-      actor_name: payload.actor_name,
-      payload,
-      timestamp: logRes.rows[0].created_at,
-    },
-  };
+    return {
+      event: {
+        id: logRes.rows[0].id,
+        type: "exploration",
+        actor_name: payload.actor_name,
+        payload,
+        timestamp: logRes.rows[0].created_at,
+      },
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

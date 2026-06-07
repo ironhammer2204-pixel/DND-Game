@@ -241,3 +241,84 @@
   to { box-shadow: 0 0 12px rgba(212, 175, 55, 0.35); }
 }
 
+/* ─── Chat Tab Bar ─────────────────────────────────────────── */
+.chat-tab-bar {
+  display: flex;
+  gap: 0;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.chat-tab-btn {
+  flex: 1;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.chat-tab-btn:hover { color: var(--text-light); background: rgba(255,255,255,0.02); }
+.chat-tab-btn--active {
+  color: var(--accent-gold);
+  border-bottom-color: var(--accent-gold);
+  background: rgba(212,175,55,0.04);
+}
+.nemesis-tab-count {
+  background: rgba(192,80,96,0.3);
+  color: #f08090;
+  border: 1px solid rgba(192,80,96,0.4);
+  border-radius: 10px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* ─── Ambush Alert ─────────────────────────────────────────── */
+.ambush-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(240,176,80,0.12);
+  border-bottom: 1px solid rgba(240,176,80,0.35);
+  color: #f0b050;
+  font-size: 0.88rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  animation: ambushSlide 0.3s ease-out;
+}
+.ambush-alert__icon { font-size: 1.1rem; flex-shrink: 0; }
+.ambush-alert__close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #f0b050;
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.ambush-alert__close:hover { opacity: 1; }
+
+@keyframes ambushSlide {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ─── Nemesis Gallery Wrapper ──────────────────────────────── */
+.nemesis-gallery-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  background: radial-gradient(ellipse at 50% 0%, rgba(155,58,239,0.04) 0%, transparent 50%),
+              var(--bg-dark);
+}

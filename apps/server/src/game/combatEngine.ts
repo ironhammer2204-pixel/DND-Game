@@ -3,6 +3,7 @@ import { pool } from "../db/client";
 import { MONSTERS, CombatParticipant, CombatEncounter } from "@dnd/shared";
 import { rollDice, rollWithAdvantage, rollWithDisadvantage } from "./diceEngine";
 import { RoomManager } from "../websocket/roomManager";
+import { evaluateCombatForNemesisPromotion, getNemesisById, selectNemesisTarget } from "./nemesisEngine";
 
 const turnTimers = new Map<string, NodeJS.Timeout>();
 
@@ -51,7 +52,11 @@ export async function saveEncounter(client: PoolClient | Pool, encounter: Combat
   );
 }
 
-export async function startCombat(campaignId: string, monstersInput: { id: string; count: number }[]): Promise<CombatEncounter> {
+export async function startCombat(
+  campaignId: string,
+  monstersInput: { id: string; count: number }[],
+  nemesisIds: string[] = []
+): Promise<CombatEncounter> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -128,8 +133,43 @@ export async function startCombat(campaignId: string, monstersInput: { id: strin
           damage_dice: def.damage_dice,
           damage_modifier: def.damage_modifier,
           xp_value: def.xp_value,
+          source_monster_id: def.id,
+          damage_dealt: 0,
+          damage_taken: 0,
+          downed_character_ids: [],
         });
       }
+    }
+
+    for (const nemesisId of nemesisIds) {
+      const nemesis = await getNemesisById(client, campaignId, nemesisId);
+      if (!nemesis || !["active", "ambushing", "missing"].includes(nemesis.status)) continue;
+      const hpMax = Number(nemesis.stats.hp_max || 10);
+      participants.push({
+        id: `nemesis-${nemesis.id}`,
+        name: `${nemesis.name} ${nemesis.epithet || ""}`.trim(),
+        type: "enemy",
+        hp_current: hpMax,
+        hp_max: hpMax,
+        initiative: rollDice("d20", 2).final,
+        conditions: [],
+        ac: Number(nemesis.stats.ac || 12),
+        attack_bonus: Number(nemesis.stats.attack_bonus || 3),
+        damage_dice: String(nemesis.stats.damage_dice || "1d6"),
+        damage_modifier: Number(nemesis.stats.damage_modifier || 1),
+        xp_value: Number(nemesis.stats.xp_value || nemesis.xp || 50),
+        source_monster_id: nemesis.source_monster_id || undefined,
+        nemesis_id: nemesis.id,
+        nemesis_tier: nemesis.tier,
+        personality: nemesis.personality,
+        grudge_target_id: nemesis.target_character_id || undefined,
+        scars: nemesis.scars,
+        minion_ids: nemesis.minion_ids,
+        damage_dealt: 0,
+        damage_taken: 0,
+        downed_character_ids: [],
+      });
+      await client.query("UPDATE public.nemeses SET status = 'active', last_seen_at = now() WHERE id = $1", [nemesis.id]);
     }
 
     // 3. Sort turn order by initiative descending
@@ -248,6 +288,10 @@ export async function processCombatAction(
     const pIdx = encounter.participants.findIndex((p) => p.id === activeParticipant.id);
     if (pIdx !== -1) {
       encounter.participants[pIdx] = activeParticipant;
+    }
+    const tIdx = encounter.turn_order.findIndex((p) => p.id === activeParticipant.id);
+    if (tIdx !== -1) {
+      encounter.turn_order[tIdx] = activeParticipant;
     }
 
     // Save and advance turn
@@ -429,6 +473,8 @@ async function performAttackAction(
     damage = Math.max(1, damage);
 
     target.hp_current = Math.max(0, target.hp_current - damage);
+    target.damage_taken = (target.damage_taken || 0) + damage;
+    attacker.damage_dealt = (attacker.damage_dealt || 0) + damage;
     text += `${isCrit ? "**Critical Hit!**" : "Hit!"} Deals ${damage} damage. (${target.hp_current}/${target.hp_max} HP left).`;
 
     // Apply HP change in DB for players
@@ -444,6 +490,7 @@ async function performAttackAction(
         text += ` **${target.name} has been knocked unconscious!**`;
         target.death_save_successes = 0;
         target.death_save_failures = 0;
+        attacker.downed_character_ids = [...new Set([...(attacker.downed_character_ids || []), target.id])];
       } else {
         text += ` **${target.name} has been defeated!**`;
       }
@@ -458,6 +505,14 @@ async function performAttackAction(
     encounter.participants[pIdx] = target;
   }
   encounter.turn_order[targetIdx] = target;
+  const attackerParticipantIdx = encounter.participants.findIndex((p) => p.id === attacker.id);
+  if (attackerParticipantIdx !== -1) {
+    encounter.participants[attackerParticipantIdx] = attacker;
+  }
+  const attackerTurnIdx = encounter.turn_order.findIndex((p) => p.id === attacker.id);
+  if (attackerTurnIdx !== -1) {
+    encounter.turn_order[attackerTurnIdx] = attacker;
+  }
 
   // Insert event log
   const attackPayload = {
@@ -535,6 +590,7 @@ async function advanceTurn(client: PoolClient, encounter: CombatEncounter): Prom
 async function resolveCombatWithVictory(client: PoolClient, encounter: CombatEncounter): Promise<void> {
   encounter.status = "resolved";
   await client.query("UPDATE public.combat_encounters SET status = 'resolved' WHERE id = $1", [encounter.id]);
+  await evaluateCombatForNemesisPromotion(client, encounter, "victory");
 
   // Calculate total XP
   const enemies = encounter.participants.filter((p) => p.type === "enemy");
@@ -585,6 +641,7 @@ async function resolveCombatWithVictory(client: PoolClient, encounter: CombatEnc
 async function resolveCombatWithDefeat(client: PoolClient, encounter: CombatEncounter): Promise<void> {
   encounter.status = "resolved";
   await client.query("UPDATE public.combat_encounters SET status = 'resolved' WHERE id = $1", [encounter.id]);
+  await evaluateCombatForNemesisPromotion(client, encounter, "defeat");
 
   const text = `Combat Resolved... Total Defeat. The party has fallen.`;
   const logPayload = { action_type: "combat_defeat", text };
@@ -625,7 +682,12 @@ export function processActiveTurn(campaignId: string, encounterId: string) {
           // Select target: random alive player
           const alivePlayers = encounter.turn_order.filter((p) => p.type === "player" && p.hp_current > 0);
           if (alivePlayers.length > 0) {
-            const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+            const target = activeParticipant.nemesis_id && activeParticipant.personality
+              ? selectNemesisTarget(
+                  { personality: activeParticipant.personality, target_character_id: activeParticipant.grudge_target_id },
+                  alivePlayers
+                ) || alivePlayers[0]
+              : alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
             await performAttackAction(client, campaignId, activeParticipant, target.id, encounter);
           }
         }
