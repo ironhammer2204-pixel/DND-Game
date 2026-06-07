@@ -13,6 +13,20 @@ interface ExplorationPayload {
   roller_name: string; dice_type: string;
   raw: number; modifier: number; final: number; context: string;
 }
+interface InventoryRow {
+  id: string;
+  character_id: string;
+  item_id: string;
+  quantity: number;
+  is_equipped: boolean;
+  acquired_at: string;
+  name: string;
+  type: string;
+  description?: string;
+  stats: Record<string, string | number | boolean>;
+  value_gp: number;
+  is_consumable: boolean;
+}
 
 async function copyToClipboard(text: string): Promise<boolean> {
   if (navigator.clipboard && window.isSecureContext) {
@@ -43,6 +57,8 @@ export function GamePage() {
   const [charClass, setCharClass] = useState<string>(CLASSES[0]);
   const [charError, setCharError] = useState("");
   const [copyToast, setCopyToast] = useState<"success" | "fail" | null>(null);
+  const [inventory, setInventory] = useState<InventoryRow[]>([]);
+  const [inventoryError, setInventoryError] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Combat spawning local states
@@ -66,8 +82,25 @@ export function GamePage() {
       const data = await apiFetch(`/api/characters/campaign/${campaignId}`);
       const chars: Character[] = data.characters ?? [];
       setPartyCharacters(chars);
-      setMyCharacter(chars.find((c) => c.user_id === user?.id) ?? null);
+      const currentCharacter = chars.find((c) => c.user_id === user?.id) ?? null;
+      setMyCharacter(currentCharacter);
+      if (currentCharacter) {
+        void fetchInventory(currentCharacter.id);
+      } else {
+        setInventory([]);
+      }
     } catch (err) { console.error("Error fetching party:", err); }
+  };
+
+  const fetchInventory = async (characterId: string) => {
+    try {
+      setInventoryError("");
+      const data = await apiFetch(`/api/characters/${characterId}/inventory`);
+      setInventory(data.inventory ?? []);
+    } catch (err) {
+      console.error("Error fetching inventory:", err);
+      setInventoryError(err instanceof Error ? err.message : "Unable to load inventory");
+    }
   };
 
   useEffect(() => {
@@ -77,7 +110,9 @@ export function GamePage() {
   useEffect(() => {
     if (!activeCampaign || !token || !user) return;
     clearEvents();
-    void fetchPartyCharacters(activeCampaign.id);
+    const loadTimer = window.setTimeout(() => {
+      void fetchPartyCharacters(activeCampaign.id);
+    }, 0);
     setWsStatus("connecting");
     const socket = new WebSocket(`${WS_URL}?token=${token}`);
 
@@ -95,7 +130,7 @@ export function GamePage() {
     socket.onclose = () => { setWsStatus("disconnected"); setWs(null); };
     socket.onerror = () => { setWsStatus("disconnected"); };
 
-    return () => { socket.close(); setWs(null); setWsStatus("disconnected"); };
+    return () => { window.clearTimeout(loadTimer); socket.close(); setWs(null); setWsStatus("disconnected"); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCampaign?.id, token]);
 
@@ -129,9 +164,33 @@ export function GamePage() {
       });
       setCharName("");
       setMyCharacter(data.character as Character);
+      void fetchInventory((data.character as Character).id);
       void fetchPartyCharacters(activeCampaign.id);
       ws?.send(JSON.stringify({ type: "JOIN_CAMPAIGN", payload: { invite_code: activeCampaign.invite_code } }));
     } catch (err) { setCharError(err instanceof Error ? err.message : "Failed to create character"); }
+  };
+
+  const toggleInventoryEquip = async (item: InventoryRow) => {
+    if (!myCharacter) return;
+    try {
+      await apiFetch(`/api/characters/${myCharacter.id}/inventory/${item.id}/equip`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_equipped: !item.is_equipped }),
+      });
+      void fetchInventory(myCharacter.id);
+    } catch (err) {
+      setInventoryError(err instanceof Error ? err.message : "Failed to update equipment");
+    }
+  };
+
+  const dropInventoryItem = async (item: InventoryRow) => {
+    if (!myCharacter) return;
+    try {
+      await apiFetch(`/api/characters/${myCharacter.id}/inventory/${item.id}`, { method: "DELETE" });
+      void fetchInventory(myCharacter.id);
+    } catch (err) {
+      setInventoryError(err instanceof Error ? err.message : "Failed to drop item");
+    }
   };
 
   const handleCopyInvite = async () => {
@@ -142,6 +201,16 @@ export function GamePage() {
   };
 
   if (!activeCampaign) return null;
+
+  const equippedItems = inventory.filter((item) => item.is_equipped);
+  const equippedArmor = equippedItems.find((item) => item.type === "armor" && item.stats.ac_base);
+  const shieldBonus = equippedItems
+    .filter((item) => item.type === "armor" && item.stats.ac_bonus)
+    .reduce((total, item) => total + Number(item.stats.ac_bonus || 0), 0);
+  const dexModifier = myCharacter ? Math.floor((Number(myCharacter.attributes.dex) - 10) / 2) : 0;
+  const armorBase = equippedArmor ? Number(equippedArmor.stats.ac_base) : 10;
+  const allowsDexBonus = equippedArmor ? Boolean(equippedArmor.stats.dex_bonus) : true;
+  const derivedAc = armorBase + (allowsDexBonus ? dexModifier : 0) + shieldBonus;
 
   return (
     <div className="game-page">
@@ -483,6 +552,8 @@ export function GamePage() {
               <div className="stat-grid">
                 <div className="stat-card"><div className="stat-card__val">{myCharacter.xp}</div><div className="stat-card__lbl">XP</div></div>
                 <div className="stat-card"><div className="stat-card__val">{myCharacter.gold}g</div><div className="stat-card__lbl">Gold</div></div>
+                <div className="stat-card"><div className="stat-card__val">{derivedAc}</div><div className="stat-card__lbl">AC</div></div>
+                <div className="stat-card"><div className="stat-card__val">{equippedItems.length}</div><div className="stat-card__lbl">Equipped</div></div>
               </div>
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Attributes &mdash; click to roll d20</div>
@@ -505,7 +576,7 @@ export function GamePage() {
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Skills</div>
                 <div className="skill-list" role="list">
-                  {Object.entries(myCharacter.skills || {}).map(([skill, bonus]) => (
+                  {(Object.entries(myCharacter.skills || {}) as Array<[string, number]>).map(([skill, bonus]) => (
                     <div key={skill} role="listitem" className="skill-row">
                       <span className="skill-row__name">{skill.charAt(0).toUpperCase() + skill.slice(1)}</span>
                       <span className="skill-row__bonus">{Number(bonus) >= 0 ? "+" : ""}{bonus}</span>
@@ -516,6 +587,40 @@ export function GamePage() {
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Quick Dice</div>
                 <DicePanel onRoll={rollDice} disabled={wsStatus !== "connected"} />
+              </div>
+              <div className="right-panel__section">
+                <div className="sidebar-section-title">Inventory</div>
+                {inventoryError && <div className="auth-message auth-message--error" role="alert">{inventoryError}</div>}
+                {inventory.length === 0 ? (
+                  <div className="member-list__empty">No items carried.</div>
+                ) : (
+                  <div className="inventory-grid">
+                    {inventory.map((item) => (
+                      <div key={item.id} className={`inventory-item${item.is_equipped ? " inventory-item--equipped" : ""}`}>
+                        <div className="inventory-item__top">
+                          <div>
+                            <div className="inventory-item__name">{item.name}</div>
+                            <div className="inventory-item__meta">
+                              {item.type}{item.quantity > 1 ? ` x${item.quantity}` : ""}
+                            </div>
+                          </div>
+                          {item.is_equipped && <span className="inventory-item__pill">On</span>}
+                        </div>
+                        <div className="inventory-item__desc">{item.description}</div>
+                        <div className="inventory-item__actions">
+                          {!item.is_consumable && (
+                            <button className="btn btn-gold inventory-item__action" onClick={() => void toggleInventoryEquip(item)}>
+                              {item.is_equipped ? "Unequip" : "Equip"}
+                            </button>
+                          )}
+                          <button className="btn btn-danger inventory-item__action" onClick={() => void dropInventoryItem(item)}>
+                            Drop
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ) : (

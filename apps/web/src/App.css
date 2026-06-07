@@ -150,6 +150,17 @@
 .attr-row__abbv { font-family: var(--font-heading); font-weight: 700; font-size: 0.95rem; color: var(--text-white); width: 38px; }
 .attr-row__score { flex: 1; font-size: 0.9rem; color: var(--text-light); }
 .attr-row__mod { font-size: 0.8rem; font-weight: 700; color: var(--accent-cyan); background: rgba(94,240,232,.1); border: 1px solid var(--border-cyan); padding: 2px 7px; border-radius: 4px; }
+/* INVENTORY */
+.inventory-grid { display: flex; flex-direction: column; gap: 10px; }
+.inventory-item { background: rgba(255,255,255,.02); border: 1px solid var(--border-subtle); border-radius: 7px; padding: 10px; }
+.inventory-item--equipped { border-color: var(--border-gold); background: rgba(212,175,55,.06); }
+.inventory-item__top { display: flex; justify-content: space-between; gap: 8px; }
+.inventory-item__name { color: var(--text-white); font-weight: 700; font-size: 0.86rem; }
+.inventory-item__meta { color: var(--accent-cyan); font-size: 0.7rem; margin-top: 2px; text-transform: uppercase; }
+.inventory-item__pill { align-self: flex-start; border: 1px solid var(--accent-gold); border-radius: 999px; color: var(--accent-gold); font-size: 0.65rem; font-weight: 700; padding: 2px 7px; text-transform: uppercase; }
+.inventory-item__desc { color: var(--text-muted); font-size: 0.76rem; line-height: 1.35; margin-top: 8px; }
+.inventory-item__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.inventory-item__action { font-size: 0.76rem; padding: 6px 8px; }
 /* DICE PANEL */
 .dice-panel { display: flex; flex-direction: column; gap: 12px; }
 .dice-panel__modifier-row { display: flex; align-items: center; gap: 8px; }
