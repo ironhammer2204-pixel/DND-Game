@@ -353,9 +353,138 @@ last_seen_at  timestamptz DEFAULT now()
 PRIMARY KEY (campaign_id, user_id)
 ```
 
+### `nemeses` — The Nemesis System
+```sql
+id                    uuid PRIMARY KEY DEFAULT gen_random_uuid()
+campaign_id           uuid REFERENCES campaigns(id)
+name                  text NOT NULL
+title                 text            -- "The Twice-Burned", "The Coward"
+base_enemy_type       text NOT NULL   -- goblin, bandit, orc, etc.
+level                 int DEFAULT 1
+target_character_id   uuid REFERENCES characters(id)  -- who they have beef with (can be null)
+history               jsonb[]         -- [ { event, result, session_date } ]
+is_alive              bool DEFAULT true
+personality           jsonb           -- { brutal, cowardly, cunning, honorable } — affects AI tactics
+promoted_from_npc_id  uuid            -- if null, auto-generated; if not null, was once a named enemy
+created_at            timestamptz DEFAULT now()
+```
+
+### `factions` — Faction Pressure System
+```sql
+id                   uuid PRIMARY KEY DEFAULT gen_random_uuid()
+campaign_id          uuid REFERENCES campaigns(id)
+name                 text NOT NULL
+description          text
+power_level          int DEFAULT 50       -- 0-100; affects world pressure
+disposition_to_party int DEFAULT 0        -- -100 to +100; hostile to friendly
+goals                jsonb NOT NULL       -- { short_term, long_term, current_priority }
+controlled_locations uuid[] DEFAULT '{}'  -- location IDs this faction controls
+leader_npc_id        uuid REFERENCES npcs(id)
+created_at           timestamptz DEFAULT now()
+```
+
+### `faction_events` — Automated World Reactions
+```sql
+id                  uuid PRIMARY KEY DEFAULT gen_random_uuid()
+campaign_id         uuid REFERENCES campaigns(id)
+faction_id          uuid REFERENCES factions(id)
+trigger_condition   jsonb           -- { power_threshold: 70, disposition: 'hostile' }
+action_type         text            -- 'seize_location','send_assassin','offer_contract','siege'
+payload             jsonb           -- action-specific data
+fired_at            timestamptz
+created_at          timestamptz DEFAULT now()
+```
+
+### `world_tick_log` — Simulation History
+```sql
+id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
+campaign_id   uuid REFERENCES campaigns(id)
+tick_number   int NOT NULL
+changes       jsonb[]             -- [ { system, what_changed, why } ]
+created_at    timestamptz DEFAULT now()
+```
+
 ---
 
-## WebSocket Events
+## Living World System — Four Interlocking Engines
+
+> **Core principle:** Randomness is noise. Consequence, memory, and agency create immersion. The world doesn't react randomly—it reacts *specifically to what the party did.*
+
+### 1. The Nemesis System
+Every significant enemy becomes a named antagonist with history, personality, and a grudge.
+
+**Mechanics:**
+- When a named enemy survives combat, they're promoted (stats increase, level up)
+- If a player nearly killed them, they develop *a grudge against that specific player*
+- If a player fled from them, they mock that player by name: *"Running again, Thorin?"*
+- If killed, their lieutenant inherits the grudge and a vendetta
+- The AI receives their full history when they reappear: *"I remember the Thornwood. You left me for dead."*
+
+**What makes this work:** The server passes the nemesis's actual event log to the AI. Every line of dialogue is grounded in real history, not generation.
+
+### 2. Faction Pressure System
+Factions compete. They gain power by controlling locations and lose it when the party interferes. When power crosses thresholds, they *take action in the world.*
+
+**Mechanics:**
+- Every faction has power level (0–100) and disposition to party (-100 to +100)
+- Party helps faction A → A's power grows, rival factions lose ground
+- When faction A crosses power_level 70, a faction_event fires automatically: they seize a location, send an assassin, or offer a high-value contract
+- **Key:** This happens *between sessions.* Players log in to find the town they liberated is now under occupation. The world didn't wait for them.
+
+### 3. World Heartbeat — The Simulation Tick
+A scheduled job (runs once per session start, or daily in real time) simulates world advancement:
+
+- Factions gain/lose power based on goals and location control
+- Nemeses move between locations (hunting the party)
+- Quests ignored have consequences: the merchant they never rescued becomes a grieving widow in the town square
+- New rumours are generated from recent events and seeded into tavern NPCs
+- Locations under faction control change state
+
+**What makes this work:** It's not random. Every tick is deterministic logic: *If faction A controls location X and power > 60, they expand to adjacent location Y.* The *content* feels surprising because systems interact, but each rule is fair and predictable.
+
+### 4. NPC Agenda System — Upgrade to Memory
+Every significant NPC now has:
+
+- **Short-term goal** (find the warehouse thief)
+- **Long-term goal** (become guild master)
+- **Secret** (skimming guild funds — only revealed under specific conditions)
+- **Relationship web** ({ npc_id: { trust, fear, owes } })
+
+**Mechanics:**
+- Server tracks NPC progress on their goals
+- If party never helps the warehouse NPC, he investigates himself
+- He eventually levels a *false accusation* at a rival NPC
+- Party returns to town, discovers someone in the stocks for a crime they didn't commit
+- This world event emerges from NPC agency, not scripting
+
+**Upgrade to `npcs` table:**
+```sql
+-- Add these columns to public.npcs:
+short_term_goal   text
+long_term_goal    text
+secret            text              -- conditions: only_if_trusted_rating_above_80, etc.
+agenda_state      jsonb             -- { current_goal_progress, attempts, failures }
+relationships     jsonb             -- { npc_id: { trust: 0-100, fear: 0-100, owes: text } }
+```
+
+---
+
+## How These Systems Interact — A Concrete Scenario
+
+**Session 1:** Party defeats bandit leader, lets lieutenant escape.  
+→ World tick runs. Lieutenant (auto-promoted to Nemesis) reorganises faction. Bandit power ticks up. They seize a road.
+
+**Session 2:** Party arrives at town. Merchant NPC (who protects trade routes) is distressed—his shipments are raided. He offers a contract.  
+→ This quest wasn't scripted. Server generated it because faction control changed and the NPC's agenda reacted.  
+→ Mid-session: Nemesis ambushes party. He addresses the player who fled by name. AI generates dialogue from his history: *"You remember me, coward?"* He's stronger. He has a scar.
+
+**Session 3:** Party kills Nemesis. His lieutenant witnesses it and flees.  
+→ World tick runs. Bandit faction power collapses (too low). A rival faction moves into the power vacuum.  
+→ Same road, different faction. Neutral disposition instead of hostile. New political situation. New story.
+
+**Nobody wrote any of that.** It emerged from four systems with memory, goals, and consequences.
+
+
 
 ### Client → Server
 ```
@@ -584,12 +713,12 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Colour-code by event type: combat (red), quest (gold), chat (white), system (grey)
 - [x] Load last 50 events on join (catch-up for reconnects)
 
-**Phase 2 done when:** Players can move between locations, roll dice with modifiers, pick up items, equip gear, see quests in a log, and all of it persists across page reloads.
+**Phase 2 done when:** Players can move between locations (once location UI is built), roll dice with modifiers, pick up items, equip gear, see quests in a log, and all of it persists across page reloads. **NOTE:** Server-side infrastructure for world movement is complete; frontend location/movement UI still needed before Phase 2 is truly playable.
 
 ---
 
-### Phase 3 — AI + combat
-**Goal: full sessions with AI narration, turn-based combat, and living NPCs**
+### Phase 3 — AI + Combat + Living World
+**Goal: full sessions with AI narration, turn-based combat, living NPCs, and a world that remembers**
 
 #### Combat engine
 - [ ] Build `combatEngine.ts` with full turn-based logic
@@ -605,37 +734,68 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Build CombatInterface UI: turn order tracker, HP bars, action buttons (attack, dodge, use item)
 - [ ] Show dice rolls animated in UI during combat
 
-#### NPC system
-- [ ] Seed 5 NPCs for starter world (merchant, guard, quest giver, villain, neutral)
-- [ ] NPC relationship values update on player interaction (server writes to `npcs.relationship_map`)
-- [ ] NPC memory log: append interaction record on every significant event
-- [ ] NPCs stay dead permanently if killed (is_alive = false, never resets)
-- [ ] `GET /api/campaigns/:id/npcs` — fetch NPCs at current location
+#### Nemesis System
+- [ ] Build `nemesisEngine.ts` — handles enemy promotion, memory, and personality
+- [ ] After combat: check if any enemies survived; promote to nemesis with level up
+- [ ] Track nemesis history: [ { event, result, damage_dealt_to_them, damage_taken } ]
+- [ ] Add target_character_id: if a player nearly killed them, set grudge to that player
+- [ ] Generate nemesis personality (brutal, cowardly, cunning, honorable) — affects tactics
+- [ ] Nemesis AI: if has grudge against player X, prioritize attacking X, mock them by name
+- [ ] On nemesis death: promote their lieutenant (auto-generate or use a sub-boss)
+- [ ] Build nemesis gallery UI — show party's nemeses, their history, personality
 
-#### Context builder
-- [ ] Build `contextBuilder.ts` — assembles read-only snapshot before every AI call
-- [ ] Fetch current location row
-- [ ] Fetch NPCs at current location with relationship values for present players
-- [ ] Fetch last 10 event_log entries
-- [ ] Fetch active quest list (titles + current objective only)
-- [ ] Include the just-calculated game result (combat outcome, skill check, etc.)
-- [ ] Cap total context at ~1500 tokens — trim oldest events if over limit
+#### Faction Pressure System
+- [ ] Create base factions for starter world (Order of the Cloaked Flame, Blackwater Syndicate, Merchant's Guild, Druidic Circle)
+- [ ] Build `factionEngine.ts` — tracks power, disposition, goals
+- [ ] Implement power calculation: faction gains power when they control locations/defeat enemies, lose it when locations are liberated
+- [ ] Implement disposition calculation: changes based on party actions for/against that faction
+- [ ] Build faction_events trigger system: when power crosses thresholds (50, 70, 90), fire corresponding actions
+- [ ] Action types: 'seize_location', 'send_assassin', 'offer_contract', 'siege', 'install_ruler'
+- [ ] Persist faction_events to DB; show in world_tick_log
 
-#### Groq narration pipeline
-- [ ] Build `dmService.ts` — calls Groq API with assembled context
-- [ ] System prompt includes forbidden-actions block (see AI section)
-- [ ] Stream response back to server as it arrives
-- [ ] Broadcast `AI_NARRATION` chunks to room via WebSocket (streaming feel)
-- [ ] Store completed narration in `event_log.ai_narration`
-- [ ] Add output filter — strip any narration containing HP values, XP numbers, quest completion declarations
-- [ ] Queue narration jobs async — never block game state broadcast waiting for AI
+#### World Heartbeat — Simulation Tick
+- [ ] Build `worldHeartbeat.ts` — runs on session start (or daily if using real-time scheduling)
+- [ ] Tick nemesis movement: move active nemeses between locations based on party location
+- [ ] Tick faction power: update based on current controlled locations and goals
+- [ ] Tick faction events: fire any events with trigger_condition met
+- [ ] Tick NPC agendas: update short-term goal progress; if stuck, trigger NPC-initiated world event
+- [ ] Generate new rumours from recent events; seed into tavern NPCs (via npc.memory_log)
+- [ ] Update location state: if under faction siege, mark as 'under_occupation', update description
+- [ ] Log all changes to world_tick_log with reasoning
+- [ ] Broadcast `WORLD_UPDATE` to all connected players showing faction-driven changes
 
-#### Procedural quest generation
-- [ ] Build quest generator: pick random template (fetch, kill, escort, find), fill with world NPCs and locations
-- [ ] Server can auto-generate a quest when party enters a new location with no active quests
+#### NPC Agenda System
+- [ ] Upgrade `npcs` table: add short_term_goal, long_term_goal, secret, agenda_state, relationships
+- [ ] Build `npcAgendaEngine.ts` — tracks NPC goals and progress
+- [ ] Short-term goals: investigation, acquisition, socialising (each has a success condition)
+- [ ] Long-term goals: self-improvement, power, wealth (check progress on each world tick)
+- [ ] Secrets: revealed only if relationship trust > 80 or under duress
+- [ ] Relationship tracking: if NPC helps party, trust increases; if party betrays them, trust decreases
+- [ ] NPC-initiated events: if NPC reaches end of short-term goal without player help, they take solo action (accuse someone, strike a deal, abandon location)
+- [ ] Build NPC profile UI — show goals, secrets (if known), and relationship status with party
+
+#### Groq narration upgrade
+- [ ] Expand context builder to include: nemesis history, NPC agenda status, faction disposition, recent world_tick changes
+- [ ] Build `nemesisContextBuilder.ts` — extracts nemesis personality and history for AI
+- [ ] Build `factionContextBuilder.ts` — extracts faction goals and recent actions for world narration
+- [ ] Expand system prompt: *"Narrate using the nemesis's personality. Reference their specific history. Show the world reacting to faction pressure."*
+- [ ] Stream narration that incorporates: specific character names (nemesis), specific past events (history), faction movements (world pressure)
+
+#### Procedural quest generation (upgraded)
+- [ ] Build quest generator: pick template (fetch, kill, escort, find, political, faction)
+- [ ] Political quests: generated from NPC agendas and faction conflicts
+- [ ] Faction quests: generated from faction_events (seize location → defend location quest)
+- [ ] Server can auto-generate a quest when party enters a location with no active quests
 - [ ] Generated quests go through same DB + broadcast flow as hand-authored quests
+- [ ] Quests now reference nemeses and factions in their objectives (kill nemesis, secure location for faction)
 
-**Phase 3 done when:** The party can get into a fight, take turns attacking enemies, see HP bars change in real time, watch the AI DM narrate the outcome afterwards, and carry NPC relationship history across sessions.
+#### Phase 2 catch-up (still needed before Phase 3 is playable)
+- [ ] **Build location/world navigation UI** — players can see locations, see connections, click to move (blocks all Phase 2 completion)
+- [ ] Build inventory system REST endpoints + UI (needed before equipment affects combat)
+- [ ] Build quest log UI (needed for faction-generated quests)
+- [ ] Seed item catalog and starter quests
+
+**Phase 3 done when:** Party can fight a named Nemesis who remembers them by name, the world pressure changes based on faction power, a new quest appears because an NPC's agenda progressed, and after Session 1 the party logs in to find the world has changed while they were gone.
 
 ---
 
@@ -751,5 +911,5 @@ VITE_SUPABASE_ANON_KEY=...
 
 ---
 
-*brain.md — last updated: 2026-06-07 comprehensive audit: Phase 1 complete, Phase 2 ~50% (added skill checks, character sheet skills, corrected checklist)*
+*brain.md — last updated: 2026-06-07 major architecture: added Living World System (Nemesis, Factions, World Heartbeat, NPC Agendas) to Phase 3*
 
