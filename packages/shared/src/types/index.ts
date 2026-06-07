@@ -417,7 +417,12 @@ export type ClientMessageType =
   | "FORCE_FACTION_ACTION"
   | "PAUSE_FACTION_ENGINE"
   | "SET_FACTION_RELATION"
-  | "TRIGGER_FACTION_EVENT";
+  | "TRIGGER_FACTION_EVENT"
+  // Encyclopedia / Balance messages
+  | "GRANT_KNOWLEDGE"
+  | "RESOLVE_RUMOR"
+  | "TRIGGER_SESSION_SUMMARY"
+  | "TRIGGER_BALANCE_CYCLE";
 
 export interface ClientMessageMap {
   ACTION_SUBMIT: {
@@ -476,7 +481,219 @@ export interface ClientMessageMap {
     faction_id: string;
     event_type: string;
   };
+  // Encyclopedia / Balance client messages
+  GRANT_KNOWLEDGE: {
+    character_id: string;
+    entry_id: string;
+    knowledge_level?: KnowledgeLevel;
+    discovery_source?: KnowledgeDiscoverySource;
+  };
+  RESOLVE_RUMOR: {
+    rumor_id: string;
+    is_true: boolean;
+  };
+  TRIGGER_SESSION_SUMMARY: {
+    session_id: string;
+  };
+  TRIGGER_BALANCE_CYCLE: Record<string, never>;
 }
+
+// ============================================================
+// ENCYCLOPEDIA SYSTEM TYPES
+// ============================================================
+
+export type EncyclopediaCategory =
+  | "location" | "npc" | "faction" | "creature" | "item"
+  | "religion" | "language" | "technology" | "event" | "era"
+  | "artifact" | "player";
+
+/** 0=unknown,1=rumor,2=basic,3=detailed,4=expert,5=complete */
+export type KnowledgeLevel = 0 | 1 | 2 | 3 | 4 | 5;
+
+export type KnowledgeDiscoverySource =
+  | "exploration" | "combat" | "quest" | "npc_dialogue" | "item"
+  | "faction_event" | "dm_grant" | "rumor";
+
+export interface EncyclopediaEntry {
+  id: string;
+  campaign_id: string;
+  category: EncyclopediaCategory;
+  source_id?: string | null;
+  source_type?: string | null;
+  title: string;
+  subtitle?: string | null;
+  summary?: string | null;
+  full_content: Record<string, any>;
+  importance: number;
+  tags: string[];
+  is_secret: boolean;
+  dm_notes?: string | null;
+  custom_lore?: string | null;
+  pinned: boolean;
+  era_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CharacterKnowledge {
+  id: string;
+  campaign_id: string;
+  character_id: string;
+  entry_id: string;
+  knowledge_level: KnowledgeLevel;
+  discovered_at: string;
+  discovery_source: KnowledgeDiscoverySource;
+  updated_at: string;
+}
+
+export interface EncyclopediaHistoryEvent {
+  id: string;
+  campaign_id: string;
+  entry_id: string;
+  event_type: string;
+  title: string;
+  description?: string | null;
+  year?: number | null;
+  importance: number;
+  involved_entry_ids: string[];
+  source_type: "combat" | "faction" | "quest" | "dm" | "system";
+  source_id?: string | null;
+  created_at: string;
+}
+
+export interface HistoricalEra {
+  id: string;
+  campaign_id: string;
+  name: string;
+  start_year?: number | null;
+  end_year?: number | null;
+  description?: string | null;
+  trigger_event_id?: string | null;
+  created_at: string;
+}
+
+export type RumorSource = "npc" | "faction" | "player" | "dm" | "system";
+
+export interface Rumor {
+  id: string;
+  campaign_id: string;
+  entry_id: string;
+  content: string;
+  reliability: number;
+  is_true?: boolean | null;
+  source_type: RumorSource;
+  source_id?: string | null;
+  spread_count: number;
+  contradicts_rumor_id?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+}
+
+export interface CharacterRumor {
+  id: string;
+  character_id: string;
+  rumor_id: string;
+  heard_at: string;
+  believed: boolean;
+}
+
+export interface ArtifactProvenance {
+  id: string;
+  campaign_id: string;
+  item_entry_id: string;
+  owner_type: "character" | "npc" | "faction" | "location" | "unknown";
+  owner_id?: string | null;
+  acquired_via: "found" | "purchased" | "stolen" | "gifted" | "crafted" | "quest" | "looted";
+  year?: number | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface SessionRecord {
+  id: string;
+  campaign_id: string;
+  session_number: number;
+  started_at?: string | null;
+  ended_at?: string | null;
+  player_character_ids: string[];
+  event_ids: string[];
+  ai_summary?: string | null;
+  dm_notes?: string | null;
+  summary_approved: boolean;
+  importance: number;
+  created_at: string;
+}
+
+// ============================================================
+// BALANCING ENGINE TYPES
+// ============================================================
+
+export interface BalanceSnapshot {
+  id: string;
+  campaign_id: string;
+  snapshot_type: "economy" | "combat" | "faction" | "loot" | "progression";
+  data: Record<string, any>;
+  flags: Record<string, any>;
+  recommendations: Record<string, any>;
+  applied: boolean;
+  created_at: string;
+}
+
+export interface EconomyMetrics {
+  id: string;
+  campaign_id: string;
+  cycle_number: number;
+  total_gold_in_circulation: number;
+  gold_generated_this_cycle: number;
+  gold_sunk_this_cycle: number;
+  inflation_index: number;
+  avg_player_wealth: number;
+  wealth_gini: number;
+  created_at: string;
+}
+
+export interface CombatMetrics {
+  id: string;
+  campaign_id: string;
+  cycle_number: number;
+  avg_combat_duration_rounds: number;
+  avg_player_damage_per_round: number;
+  avg_enemy_damage_per_round: number;
+  win_rate: number;
+  death_rate: number;
+  most_used_build_types: Record<string, number>;
+  dominant_build_percent: number;
+  sessions_sampled: number;
+  created_at: string;
+}
+
+export interface LootMetrics {
+  id: string;
+  campaign_id: string;
+  cycle_number: number;
+  item_id: string;
+  drop_count: number;
+  usage_count: number;
+  sell_count: number;
+  current_drop_rate: number;
+  recommended_drop_rate: number;
+  created_at: string;
+}
+
+export interface ProgressionMetrics {
+  id: string;
+  campaign_id: string;
+  cycle_number: number;
+  avg_character_level: number;
+  xp_per_session_avg: number;
+  level_distribution: Record<string, number>;
+  soft_cap_triggers: Record<string, any>;
+  created_at: string;
+}
+
+// ============================================================
+// EXTENDED WEBSOCKET MESSAGE TYPES
+// ============================================================
 
 export type ServerMessageType =
   | "GAME_EVENT"
@@ -496,6 +713,17 @@ export type ServerMessageType =
   | "FACTION_COLLAPSED"
   | "FACTION_VICTORY"
   | "PLAYER_REP_CHANGED"
+  // Encyclopedia events
+  | "ENCYCLOPEDIA_ENTRY_UPDATED"
+  | "ENCYCLOPEDIA_KNOWLEDGE_GRANTED"
+  | "KNOWLEDGE_GAINED"
+  | "RUMOR_HEARD"
+  | "RUMOR_RESOLVED"
+  | "ERA_CHANGED"
+  | "SESSION_SUMMARY_READY"
+  // Balance events
+  | "BALANCE_CYCLE_COMPLETE"
+  | "BALANCE_ALERT"
   | "ERROR";
 
 export interface ServerMessageMap {
@@ -585,6 +813,53 @@ export interface ServerMessageMap {
     score: number;
     tier: string;
     narrative: string;
+  };
+  // Encyclopedia events
+  ENCYCLOPEDIA_ENTRY_UPDATED: {
+    entry: EncyclopediaEntry;
+    reason?: string;
+  };
+  ENCYCLOPEDIA_KNOWLEDGE_GRANTED: {
+    character_id: string;
+    entry_id: string;
+    knowledge_level: KnowledgeLevel;
+    discovery_source: KnowledgeDiscoverySource;
+  };
+  KNOWLEDGE_GAINED: {
+    character_id: string;
+    entry_id: string;
+    knowledge_level: KnowledgeLevel;
+    discovery_source: KnowledgeDiscoverySource;
+    entry_title: string;
+  };
+  RUMOR_HEARD: {
+    character_id: string;
+    rumor: Rumor;
+  };
+  RUMOR_RESOLVED: {
+    rumor_id: string;
+    is_true: boolean;
+    narrative: string;
+  };
+  ERA_CHANGED: {
+    era: HistoricalEra;
+    trigger_event_id?: string;
+    narrative: string;
+  };
+  SESSION_SUMMARY_READY: {
+    session: SessionRecord;
+    approved: boolean;
+  };
+  BALANCE_CYCLE_COMPLETE: {
+    campaign_id: string;
+    cycle_number: number;
+    adjustments: Record<string, unknown>[];
+  };
+  BALANCE_ALERT: {
+    alert_id: string;
+    metric_type: string;
+    severity: "info" | "warning" | "critical";
+    message: string;
   };
   ERROR: {
     code: string;

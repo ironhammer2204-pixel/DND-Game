@@ -10,9 +10,12 @@ import campaignRouter from "./routes/campaigns";
 import characterRouter from "./routes/characters";
 import nemesisRouter from "./routes/nemeses";
 import factionRouter from "./routes/factions";
+import encyclopediaRouter from "./routes/encyclopedia";
+import balanceRouter from "./routes/balance";
 import { authMiddleware, AuthenticatedRequest } from "./middleware/auth";
 import { authenticateSocket, handleWSMessage } from "./websocket/eventHandlers";
 import { RoomManager } from "./websocket/roomManager";
+import { runBalancingCycle } from "./game/balancingEngine";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -27,6 +30,8 @@ app.use("/api/campaigns", campaignRouter);
 app.use("/api/characters", characterRouter);
 app.use("/api/campaigns", nemesisRouter);
 app.use("/api/campaigns", factionRouter);
+app.use("/api/campaigns", encyclopediaRouter);
+app.use("/api/campaigns", balanceRouter);
 
 app.get("/api/auth/me", authMiddleware, (req: AuthenticatedRequest, res) => {
   res.json({ message: "Access granted", user: req.user });
@@ -139,4 +144,30 @@ server.listen(port, async () => {
   } catch (err) {
     console.error("Failed to connect to the database on startup:", err);
   }
+
+  // -------------------------------------------------------------------------
+  // Phase I — Automated Balancing Cycle Timer (every 30 minutes)
+  // Runs across all active campaigns that have the balancing engine enabled.
+  // -------------------------------------------------------------------------
+  const BALANCE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+  const balancingTimer = setInterval(async () => {
+    if (shuttingDown) return;
+    try {
+      const campaignsRes = await pool.query(
+        `SELECT id FROM public.campaigns
+         WHERE (world_state->>'balance_engine_paused')::boolean IS NOT TRUE
+         AND created_at > now() - interval '30 days'`
+      );
+      for (const row of campaignsRes.rows) {
+        runBalancingCycle(pool, row.id).catch((err) =>
+          console.error(`[balancingTimer] cycle failed for campaign ${row.id}:`, err)
+        );
+      }
+    } catch (err) {
+      console.error("[balancingTimer] Failed to fetch campaigns:", err);
+    }
+  }, BALANCE_INTERVAL_MS);
+
+  // Unref so timer doesn't prevent graceful shutdown
+  balancingTimer.unref();
 });

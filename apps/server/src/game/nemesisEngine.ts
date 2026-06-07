@@ -14,6 +14,12 @@ import {
   nextTier,
   pickPersonality,
 } from "./nemesisConfig";
+import {
+  createEntryFromSource,
+  updateEntryFromEvent,
+  recordHistoryEvent,
+  computeImportance,
+} from "./encyclopediaEngine";
 
 interface PromotionContext {
   encounterId?: string;
@@ -207,6 +213,11 @@ export async function promoteEnemyToNemesis(
   );
   await handleNemesisQuestIntegration(client, campaignId, nemesis, "promoted");
 
+  // Encyclopedia: auto-create entry for the new nemesis
+  void createEntryFromSource(client, "npc", nemesis.id, campaignId).catch((e) =>
+    console.error("[nemesisEngine] encyclopedia createEntryFromSource failed:", e)
+  );
+
   return { nemesis, history };
 }
 
@@ -308,6 +319,17 @@ export async function applyNemesisScar(
     summary: `${updated.name} gained a permanent scar: ${scar.label}.`,
     mechanicalData: { scar, seed },
   });
+
+  // Encyclopedia: update nemesis entry with scar data
+  const nemesisEntryRes = await client.query(
+    "SELECT id FROM public.encyclopedia_entries WHERE source_type = 'npc' AND source_id = $1",
+    [nemesisId]
+  );
+  if (nemesisEntryRes.rows.length > 0) {
+    const importance = computeImportance({ player_characters_involved: 1 });
+    void updateEntryFromEvent(client, nemesisEntryRes.rows[0].id, campaignId, { latest_scar: scar }, importance).catch(() => {});
+  }
+
   return updated;
 }
 
@@ -351,7 +373,24 @@ export async function evaluateCombatForNemesisPromotion(client: PoolClient, enco
         });
         RoomManager.broadcastToRoom(encounter.campaign_id, "NEMESIS_UPDATE", { nemesis, history_entry: history, reason: "killed" });
         await handleNemesisQuestIntegration(client, encounter.campaign_id, nemesis, "killed");
-        
+
+        // Encyclopedia: record nemesis death as high-importance history event
+        const entryRes = await client.query(
+          "SELECT id FROM public.encyclopedia_entries WHERE source_type = 'npc' AND source_id = $1",
+          [nemesis.id]
+        );
+        if (entryRes.rows.length > 0) {
+          const importance = computeImportance({ deaths_involved: 1, player_characters_involved: encounter.participants.filter(p => p.type === "player").length });
+          void recordHistoryEvent(
+            client, encounter.campaign_id, entryRes.rows[0].id,
+            "assassination",
+            `${nemesis.name} Defeated`,
+            `${nemesis.name} ${nemesis.epithet || ""} was slain by the party after a fierce battle.`,
+            importance,
+            { sourceType: "combat", sourceId: encounter.id }
+          ).catch(() => {});
+        }
+
         // Apply -20 faction relation drop on nemesis death
         if (nemesis.faction_id) {
           const players = encounter.participants.filter((p) => p.type === "player");
@@ -519,6 +558,22 @@ export async function assignSuccessor(
       reason: "successor_activated",
     });
     await handleNemesisQuestIntegration(client, campaignId, successor, "successor", deadNemesisId);
+
+    // Encyclopedia: record succession event
+    const succEntryRes = await client.query(
+      "SELECT id FROM public.encyclopedia_entries WHERE source_type = 'npc' AND source_id = $1",
+      [successorId]
+    );
+    if (succEntryRes.rows.length > 0) {
+      const importance = computeImportance({ factions_involved: 1, player_characters_involved: 1 });
+      void recordHistoryEvent(
+        client, campaignId, succEntryRes.rows[0].id,
+        "succession",
+        `${successor.name} Claims Succession`,
+        `${successor.name} ${successor.epithet || ""} inherited the grudge and bounty of ${deadNemesis.name}.`,
+        importance
+      ).catch(() => {});
+    }
   }
   return successor;
 }

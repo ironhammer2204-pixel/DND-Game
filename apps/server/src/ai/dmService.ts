@@ -383,4 +383,28 @@ Respond ONLY with a valid JSON object mapping tag names to integer scores. Examp
   queueDepth(): number {
     return queue.length;
   },
+
+  /**
+   * Generates a session summary narrative directly (awaitable).
+   * Used by encyclopediaEngine.generateSessionSummary().
+   * Does NOT use the event_log queue — returns text directly.
+   */
+  async generateSessionSummary(prompt: string): Promise<string> {
+    const client = getGroqClient();
+    const completion = await client.chat.completions.create({
+      model: GROQ_MODEL,
+      max_tokens: 800,
+      temperature: 0.75,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a historian chronicling a D&D campaign. Write in past tense, third person. Be engaging and narrative-driven. Do not mention game mechanics, dice rolls, or numbers.",
+        },
+        { role: "user", content: prompt },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content ?? "";
+    return raw.trim();
+  },
 };

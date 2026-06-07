@@ -15,6 +15,12 @@ import {
   PERSONALITY_WEIGHTS,
   VICTORY_CONDITIONS,
 } from "./factionConfig";
+import {
+  createEntryFromSource,
+  updateEntryFromEvent,
+  recordHistoryEvent,
+  computeImportance,
+} from "./encyclopediaEngine";
 
 // Helper function to cast postgres rows to Faction
 function rowToFaction(row: any): Faction {
@@ -924,6 +930,23 @@ export async function handleFactionBankruptcy(client: PoolClient | Pool, campaig
         faction_id: fac.id,
         narrative,
       });
+
+      // Encyclopedia: record faction collapse as high-importance history event
+      const factionEntryRes = await client.query(
+        "SELECT id FROM public.encyclopedia_entries WHERE source_type = 'faction' AND source_id = $1",
+        [fac.id]
+      );
+      if (factionEntryRes.rows.length > 0) {
+        const importance = computeImportance({ factions_involved: 3, locations_affected: fac.territories });
+        void recordHistoryEvent(
+          client, campaignId, factionEntryRes.rows[0].id,
+          "faction_collapse",
+          `${fac.name} Collapses`,
+          narrative,
+          importance,
+          { sourceType: "faction", sourceId: fac.id }
+        ).catch(() => {});
+      }
     } else {
       await client.query("UPDATE public.factions SET stability = $1 WHERE id = $2", [nextStability, fac.id]);
     }

@@ -5,6 +5,8 @@ import { WsReconnectBanner } from "../components/WsReconnectBanner";
 import { DicePanel } from "../components/DicePanel";
 import { NemesisGallery } from "../components/NemesisGallery";
 import { FactionControlRoom } from "../components/FactionControlRoom";
+import { EncyclopediaPanel } from "../components/EncyclopediaPanel";
+import { BalanceDashboard } from "../components/BalanceDashboard";
 import { RACES, CLASSES } from "@dnd/shared";
 import { API_URL, WS_URL } from "../config";
 import type { Character, DiceType, Quest, Nemesis, ServerWSMessage, ServerMessageType, NPC } from "@dnd/shared";
@@ -103,7 +105,7 @@ export function GamePage() {
   // Nemesis system state
   const [nemeses, setNemeses] = useState<Nemesis[]>([]);
   const [ambushAlert, setAmbushAlert] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "nemesis">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "nemesis" | "encyclopedia" | "balance">("chat");
 
   // Combat spawning local states
   const [selectedMonster, setSelectedMonster] = useState("goblin");
@@ -834,6 +836,16 @@ export function GamePage() {
                 </span>
               )}
             </button>
+            <button
+              className={`chat-tab-btn ${activeTab === "encyclopedia" ? "chat-tab-btn--active" : ""}`}
+              onClick={() => setActiveTab("encyclopedia")}
+            >📚 Encyclopedia</button>
+            {activeRole === "dm" && (
+              <button
+                className={`chat-tab-btn ${activeTab === "balance" ? "chat-tab-btn--active" : ""}`}
+                onClick={() => setActiveTab("balance")}
+              >⚖️ Balance</button>
+            )}
           </div>
 
           {activeTab === "nemesis" ? (
@@ -848,6 +860,26 @@ export function GamePage() {
                   void fetchNemeses(activeCampaign.id);
                   void fetchFactionSystemData(activeCampaign.id);
                 }}
+              />
+            </div>
+          ) : null}
+
+          {activeTab === "encyclopedia" ? (
+            <div className="encyclopedia-tab-wrapper" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <EncyclopediaPanel
+                campaignId={activeCampaign.id}
+                token={token ?? ""}
+                isDM={activeRole === "dm"}
+                characterId={myCharacter?.id}
+              />
+            </div>
+          ) : null}
+
+          {activeTab === "balance" && activeRole === "dm" ? (
+            <div className="balance-tab-wrapper" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <BalanceDashboard
+                campaignId={activeCampaign.id}
+                token={token ?? ""}
               />
             </div>
           ) : null}

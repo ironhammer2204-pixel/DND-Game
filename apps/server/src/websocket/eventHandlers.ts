@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { ClientWSMessage, ClientMessageType, Character } from "@dnd/shared";
+import { ClientWSMessage, ClientMessageType, Character, KnowledgeLevel, KnowledgeDiscoverySource } from "@dnd/shared";
 import { RoomManager } from "./roomManager";
 import { pool } from "../db/client";
 import { rollDice } from "../game/diceEngine";
@@ -7,6 +7,8 @@ import { processPlayerAction } from "../game/actionProcessor";
 import { supabaseAdmin } from "../db/supabase";
 import { startCombat, processCombatAction, rollDeathSave, getActiveEncounter } from "../game/combatEngine";
 import { resolveAction, runFactionCycle } from "../game/factionEngine";
+import { grantKnowledge, resolveRumor, generateSessionSummary } from "../game/encyclopediaEngine";
+import { runBalancingCycle } from "../game/balancingEngine";
 
 
 export interface DecodedToken {
@@ -633,6 +635,130 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
             client.release();
           }
         }
+        break;
+      }
+
+      // -----------------------------------------------------------------------
+      // Encyclopedia: GRANT_KNOWLEDGE — DM grants a character knowledge of entry
+      // -----------------------------------------------------------------------
+      case "GRANT_KNOWLEDGE": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Not in a campaign room" });
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Only the DM can grant knowledge." });
+        }
+
+        const msg = message as ClientWSMessage<"GRANT_KNOWLEDGE">;
+        const { character_id, entry_id, knowledge_level = 2, discovery_source = "dm_grant" } = msg.payload;
+
+        try {
+          const knowledge = await grantKnowledge(
+            pool, character_id, entry_id, participant.campaignId,
+            knowledge_level as KnowledgeLevel,
+            discovery_source as KnowledgeDiscoverySource
+          );
+          // Notify only the target character's connection if online
+          RoomManager.broadcastToRoom(participant.campaignId, "ENCYCLOPEDIA_KNOWLEDGE_GRANTED", {
+            character_id, entry_id, knowledge_level, discovery_source,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to grant knowledge";
+          return RoomManager.sendToParticipant(ws, "ERROR", { code: "BAD_REQUEST", message: errorMessage });
+        }
+        break;
+      }
+
+      // -----------------------------------------------------------------------
+      // Encyclopedia: RESOLVE_RUMOR — DM confirms/disproves a rumor
+      // -----------------------------------------------------------------------
+      case "RESOLVE_RUMOR": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Not in a campaign room" });
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Only the DM can resolve rumors." });
+        }
+
+        const msg = message as ClientWSMessage<"RESOLVE_RUMOR">;
+        const { rumor_id, is_true } = msg.payload;
+
+        try {
+          await resolveRumor(pool, rumor_id, participant.campaignId, is_true);
+          RoomManager.broadcastToRoom(participant.campaignId, "RUMOR_RESOLVED", {
+            rumor_id,
+            is_true,
+            narrative: is_true ? "The rumor has been confirmed true." : "The rumor has been debunked.",
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to resolve rumor";
+          return RoomManager.sendToParticipant(ws, "ERROR", { code: "BAD_REQUEST", message: errorMessage });
+        }
+        break;
+      }
+
+      // -----------------------------------------------------------------------
+      // Encyclopedia: TRIGGER_SESSION_SUMMARY — DM queues AI summarization
+      // -----------------------------------------------------------------------
+      case "TRIGGER_SESSION_SUMMARY": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Not in a campaign room" });
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Only the DM can trigger session summaries." });
+        }
+
+        const msg = message as ClientWSMessage<"TRIGGER_SESSION_SUMMARY">;
+        const { session_id } = msg.payload;
+
+        generateSessionSummary(pool, session_id, participant.campaignId).catch((err) =>
+          console.error("[WS] generateSessionSummary error:", err)
+        );
+        RoomManager.sendToParticipant(ws, "GAME_EVENT", {
+          id: "system",
+          type: "system",
+          payload: { message: `Session summary generation started for session ${session_id}` },
+          timestamp: new Date().toISOString(),
+        });
+        break;
+      }
+
+      // -----------------------------------------------------------------------
+      // Balance: TRIGGER_BALANCE_CYCLE — DM manually fires a balance cycle
+      // -----------------------------------------------------------------------
+      case "TRIGGER_BALANCE_CYCLE": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Not in a campaign room" });
+
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", { code: "UNAUTHORIZED", message: "Only the DM can trigger a balance cycle." });
+        }
+
+        runBalancingCycle(pool, participant.campaignId).catch((err) =>
+          console.error("[WS] runBalancingCycle error:", err)
+        );
+        RoomManager.sendToParticipant(ws, "GAME_EVENT", {
+          id: "system",
+          type: "system",
+          payload: { message: "Balance cycle started. Dashboard will update shortly." },
+          timestamp: new Date().toISOString(),
+        });
         break;
       }
 
