@@ -5,6 +5,8 @@ import { pool } from "../db/client";
 import { rollDice } from "../game/diceEngine";
 import { processPlayerAction } from "../game/actionProcessor";
 import { supabaseAdmin } from "../db/supabase";
+import { startCombat, processCombatAction, rollDeathSave, getActiveEncounter } from "../game/combatEngine";
+
 
 export interface DecodedToken {
   sub: string;
@@ -110,12 +112,17 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           });
         }
 
-        // 5. Broadcast player joined to room
         RoomManager.broadcastToRoom(campaignId, "PLAYER_JOINED", {
           user_id: user.userId,
           username: user.username,
           character,
         });
+
+        // Send active combat if there is one
+        const activeCombat = await getActiveEncounter(pool, campaignId);
+        if (activeCombat) {
+          RoomManager.sendToParticipant(ws, "COMBAT_UPDATE", { encounter: activeCombat });
+        }
 
         await sendRecentEvents(ws, campaignId);
 
@@ -173,12 +180,17 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           });
         }
 
-        // Broadcast player joined (acting as reconnect notice)
         RoomManager.broadcastToRoom(campaign_id, "PLAYER_JOINED", {
           user_id: user.userId,
           username: user.username,
           character,
         });
+
+        // Send active combat if there is one
+        const activeCombat = await getActiveEncounter(pool, campaign_id);
+        if (activeCombat) {
+          RoomManager.sendToParticipant(ws, "COMBAT_UPDATE", { encounter: activeCombat });
+        }
 
         await sendRecentEvents(ws, campaign_id);
 
@@ -327,6 +339,91 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           });
         }
 
+        break;
+      }
+
+      case "START_COMBAT": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        // Verify DM role
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can start combat.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"START_COMBAT">;
+        try {
+          const encounter = await startCombat(participant.campaignId, msg.payload.monsters);
+          RoomManager.broadcastToRoom(participant.campaignId, "COMBAT_UPDATE", { encounter });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to start combat";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
+        break;
+      }
+
+      case "COMBAT_ACTION": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"COMBAT_ACTION">;
+        const { action_type, target_id } = msg.payload;
+
+        try {
+          await processCombatAction(
+            participant.campaignId,
+            user.userId,
+            action_type as any,
+            target_id
+          );
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to process combat action";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
+        break;
+      }
+
+      case "DEATH_SAVE_ROLL": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        try {
+          await rollDeathSave(participant.campaignId, user.userId);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to roll death save";
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "BAD_REQUEST",
+            message: errorMessage,
+          });
+        }
         break;
       }
 

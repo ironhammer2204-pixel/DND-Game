@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { Character, Campaign, ServerWSMessage, ServerMessageType, ServerMessageMap } from "@dnd/shared";
+import type { Character, Campaign, ServerWSMessage, ServerMessageType, ServerMessageMap, CombatEncounter } from "@dnd/shared";
+
 
 export interface LobbyCampaign extends Campaign {
   role: "player" | "dm";
@@ -26,6 +27,7 @@ interface GameState {
   partyCharacters: Character[];
   myCharacter: Character | null;
   eventLogs: GameOrSystemEvent[];
+  activeCombat: CombatEncounter | null;
   ws: WebSocket | null;
   wsStatus: WsStatus;
 
@@ -35,6 +37,7 @@ interface GameState {
   setMyCharacter: (char: Character | null) => void;
   appendEvent: (event: GameOrSystemEvent) => void;
   clearEvents: () => void;
+  setActiveCombat: (combat: CombatEncounter | null) => void;
   setWs: (ws: WebSocket | null) => void;
   setWsStatus: (status: WsStatus) => void;
   handleWsMessage: (message: ServerWSMessage<ServerMessageType>, userId: string, fetchParty: (id: string) => void) => void;
@@ -48,6 +51,7 @@ const initialState = {
   partyCharacters: [] as Character[],
   myCharacter: null as Character | null,
   eventLogs: [] as GameOrSystemEvent[],
+  activeCombat: null as CombatEncounter | null,
   ws: null as WebSocket | null,
   wsStatus: "disconnected" as WsStatus,
 };
@@ -67,6 +71,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((state) => ({ eventLogs: [...state.eventLogs, event] })),
 
   clearEvents: () => set({ eventLogs: [] }),
+
+  setActiveCombat: (combat) => set({ activeCombat: combat }),
 
   setWs: (ws) => set({ ws }),
 
@@ -110,6 +116,12 @@ export const useGameStore = create<GameState>((set, get) => ({
         appendEvent(gameEvent);
         break;
       }
+      case "COMBAT_UPDATE": {
+        const payload = message.payload as { encounter: CombatEncounter };
+        set({ activeCombat: payload.encounter.status === "active" ? payload.encounter : null });
+        fetchParty(activeCampaign.id);
+        break;
+      }
       case "DICE_RESULT":
         break;
       case "ERROR": {
@@ -117,7 +129,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         appendEvent({
           id: Math.random().toString(),
           type: "system",
-          payload: { text: `\u26a0 Server error: ${errorPayload.message}` },
+          payload: { text: `⚠️ Server error: ${errorPayload.message}` },
           timestamp: new Date().toISOString(),
         });
         break;

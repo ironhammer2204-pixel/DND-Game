@@ -34,6 +34,7 @@ export function GamePage() {
     activeCampaign, activeRole, partyCharacters, myCharacter, eventLogs,
     ws, wsStatus, setPartyCharacters, setMyCharacter, clearEvents,
     setWs, setWsStatus, handleWsMessage, setActiveCampaign,
+    activeCombat
   } = useGameStore();
 
   const [chatMessage, setChatMessage] = useState("");
@@ -43,6 +44,12 @@ export function GamePage() {
   const [charError, setCharError] = useState("");
   const [copyToast, setCopyToast] = useState<"success" | "fail" | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Combat spawning local states
+  const [selectedMonster, setSelectedMonster] = useState("goblin");
+  const [monsterCount, setMonsterCount] = useState(1);
+  const [selectedTarget, setSelectedTarget] = useState("");
+
 
   const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     const res = await fetch(`${API_URL}${endpoint}`, {
@@ -202,6 +209,146 @@ export function GamePage() {
         </aside>
 
         <main className="chat-column" aria-label="Game events and chat">
+          {activeCombat && (
+            <div className="combat-tracker-panel animate-fade-in" style={{ padding: "12px", borderBottom: "1px solid var(--border-dark)", background: "rgba(10, 11, 20, 0.7)", backdropFilter: "blur(8px)" }}>
+              <div className="combat-tracker-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <div className="combat-tracker-title" style={{ display: "flex", alignItems: "center", gap: "6px", fontFamily: "var(--font-cinzel)", fontWeight: "bold", color: "var(--accent-gold)" }}>
+                  <span className="combat-icon">⚔️</span>
+                  <span>Combat &mdash; Round {activeCombat.round_number}</span>
+                </div>
+                <div className="combat-active-turn" style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>
+                  Active Turn: <span className="active-name" style={{ color: "var(--accent-gold)", fontWeight: "bold" }}>{activeCombat.turn_order[activeCombat.current_turn_index]?.name}</span>
+                </div>
+              </div>
+
+              {/* Participant List */}
+              <div className="combat-participants-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "8px", marginBottom: "12px", maxHeight: "150px", overflowY: "auto", padding: "4px" }}>
+                {activeCombat.turn_order.map((p, idx) => {
+                  const isCurrent = idx === activeCombat.current_turn_index;
+                  const hpPct = Math.max(0, (p.hp_current / p.hp_max) * 100);
+                  const isDead = p.hp_current <= 0;
+                  const isUnconscious = isDead && p.type === "player" && !p.conditions.includes("stable");
+                  const isStable = p.conditions.includes("stable");
+
+                  return (
+                    <div key={p.id} className={`combat-p-card ${isCurrent ? 'combat-p-card--current' : ''} ${isDead ? 'combat-p-card--dead' : ''}`} style={{
+                      padding: "8px",
+                      borderRadius: "6px",
+                      background: isCurrent ? "rgba(184, 134, 11, 0.15)" : "rgba(255, 255, 255, 0.03)",
+                      border: isCurrent ? "1px solid var(--accent-gold)" : "1px solid var(--border-dark)",
+                      opacity: isDead ? 0.6 : 1,
+                      transition: "all 0.3s ease"
+                    }}>
+                      <div className="combat-p-card__header" style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", fontWeight: "600", marginBottom: "4px" }}>
+                        <span className="combat-p-card__name" style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: "100px", color: isCurrent ? "var(--accent-gold)" : "var(--text-light)" }}>
+                          {isCurrent && <span className="current-arrow">👉 </span>}
+                          {p.name}
+                        </span>
+                        <span className="combat-p-card__hp" style={{ color: "var(--text-dim)" }}>{p.hp_current}/{p.hp_max}</span>
+                      </div>
+                      <div className="combat-p-card__hp-bar" style={{ height: "4px", background: "rgba(255,255,255,0.1)", borderRadius: "2px", overflow: "hidden", marginBottom: "4px" }}>
+                        <div className="combat-p-card__hp-fill" style={{ width: `${hpPct}%`, height: "100%", transition: "width 0.3s ease", background: p.hp_current / p.hp_max > 0.5 ? "var(--success-green)" : p.hp_current / p.hp_max > 0.25 ? "var(--accent-gold)" : "var(--danger-red)" }} />
+                      </div>
+                      <div className="combat-p-card__details" style={{ display: "flex", flexWrap: "wrap", gap: "4px", fontSize: "0.7rem", alignItems: "center" }}>
+                        <span className="combat-p-card__stat" style={{ color: "var(--text-dim)" }}>AC: {p.ac}</span>
+                        {p.conditions.map(c => (
+                          <span key={c} className={`condition-badge condition-badge--${c}`} style={{ background: "rgba(184, 134, 11, 0.2)", border: "1px solid var(--accent-gold)", borderRadius: "3px", padding: "1px 3px" }}>{c}</span>
+                        ))}
+                        {isUnconscious && (
+                          <div className="combat-p-card__death-saves" style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+                            <span style={{ color: "var(--danger-red)" }}>💀</span>
+                            <span style={{ color: "var(--success-green)" }}>✓</span>{p.death_save_successes}
+                            <span style={{ color: "var(--danger-red)", marginLeft: "4px" }}>✗</span>{p.death_save_failures}
+                          </div>
+                        )}
+                        {isStable && <span className="stable-badge" style={{ color: "var(--success-green)" }}>Stable</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Action Console */}
+              {(() => {
+                const activeParticipant = activeCombat.turn_order[activeCombat.current_turn_index];
+                if (!activeParticipant) return null;
+
+                const isMyTurn = myCharacter && activeParticipant.id === myCharacter.id;
+                const isEnemyTurn = activeParticipant.type === "enemy";
+
+                if (isEnemyTurn) {
+                  return (
+                    <div className="combat-action-console combat-action-console--enemy" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "8px", background: "rgba(0,0,0,0.2)", borderRadius: "6px", fontSize: "0.85rem", color: "var(--text-dim)" }}>
+                      <span className="loading-spinner-small" style={{ width: "12px", height: "12px", border: "2px solid var(--text-dim)", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                      <span>{activeParticipant.name} is preparing to strike...</span>
+                    </div>
+                  );
+                }
+
+                if (isMyTurn) {
+                  const isDowned = myCharacter.hp_current === 0 && !activeParticipant.conditions.includes("stable");
+                  if (isDowned) {
+                    return (
+                      <div className="combat-action-console combat-action-console--downed" style={{ padding: "8px", background: "rgba(139,0,0,0.1)", border: "1px solid var(--danger-red)", borderRadius: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.85rem", color: "var(--danger-red)", fontWeight: "600" }}>⚠️ Unconscious! Roll Death Save.</span>
+                        <button onClick={() => ws?.send(JSON.stringify({ type: "DEATH_SAVE_ROLL", payload: {} }))} className="btn btn-danger" style={{ padding: "4px 12px" }}>
+                          💀 Roll Death Save
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  const enemies = activeCombat.turn_order.filter(p => p.type === "enemy" && p.hp_current > 0);
+                  const currentTargetId = selectedTarget && enemies.some(e => e.id === selectedTarget)
+                    ? selectedTarget
+                    : (enemies[0]?.id || "");
+
+                  return (
+                    <div className="combat-action-console" style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-dark)", borderRadius: "6px" }}>
+                      <div className="action-console-row" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                        <div className="form-group flex-grow" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <label htmlFor="combat-target-select" style={{ fontSize: "0.8rem", color: "var(--text-dim)", whiteSpace: "nowrap" }}>Target:</label>
+                          <select id="combat-target-select" className="input-field" value={currentTargetId} onChange={e => setSelectedTarget(e.target.value)} style={{ padding: "4px 8px" }}>
+                            {enemies.map(e => (
+                              <option key={e.id} value={e.id}>{e.name} ({e.hp_current}/{e.hp_max} HP)</option>
+                            ))}
+                            {enemies.length === 0 && <option value="">No targets left</option>}
+                          </select>
+                        </div>
+                        <div className="action-buttons" style={{ display: "flex", gap: "6px" }}>
+                          <button onClick={() => ws?.send(JSON.stringify({
+                            type: "COMBAT_ACTION",
+                            payload: { action_type: "attack", target_id: currentTargetId }
+                          }))} className="btn btn-primary" style={{ padding: "4px 12px" }} disabled={enemies.length === 0}>
+                            ⚔️ Attack
+                          </button>
+                          <button onClick={() => ws?.send(JSON.stringify({
+                            type: "COMBAT_ACTION",
+                            payload: { action_type: "dodge" }
+                          }))} className="btn btn-ghost" style={{ padding: "4px 12px" }}>
+                            🛡️ Dodge
+                          </button>
+                          <button onClick={() => ws?.send(JSON.stringify({
+                            type: "COMBAT_ACTION",
+                            payload: { action_type: "end_turn" }
+                          }))} className="btn btn-secondary" style={{ padding: "4px 12px" }}>
+                            End Turn
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="combat-action-console combat-action-console--waiting" style={{ padding: "8px", background: "rgba(0,0,0,0.1)", borderRadius: "6px", fontSize: "0.85rem", color: "var(--text-dim)", textAlign: "center" }}>
+                    Waiting for {activeParticipant.name} to complete their turn...
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="chat-log" role="log" aria-live="polite" aria-atomic="false">
             {eventLogs.map((log) => {
               if (log.type === "system") {
@@ -270,6 +417,46 @@ export function GamePage() {
                 <span className="right-panel__role-indicator" aria-hidden="true">&#x265B;</span>
               </div>
               <p className="right-panel__dm-desc">You oversee the campaign. Narrate story beats and challenge the party.</p>
+              
+              <div className="right-panel__section">
+                <div className="sidebar-section-title">Combat Controller</div>
+                {activeCombat ? (
+                  <div className="dm-combat-status" style={{ padding: "8px", background: "rgba(184,134,11,0.05)", border: "1px solid var(--accent-gold)", borderRadius: "6px" }}>
+                    <p className="status-active" style={{ fontSize: "0.85rem", color: "var(--accent-gold)", fontWeight: "bold", margin: "0 0 6px 0" }}>⚔️ Combat is Active (Round {activeCombat.round_number})</p>
+                    <div className="turn-indicator" style={{ fontSize: "0.8rem", color: "var(--text-light)" }}>
+                      Current Turn: <strong>{activeCombat.turn_order[activeCombat.current_turn_index]?.name}</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!ws) return;
+                    ws.send(JSON.stringify({
+                      type: "START_COMBAT",
+                      payload: { monsters: [{ id: selectedMonster, count: monsterCount }] }
+                    }));
+                  }} className="dm-combat-form">
+                    <div className="form-group" style={{ marginBottom: "8px" }}>
+                      <label htmlFor="monster-select" style={{ fontSize: "0.8rem", color: "var(--text-dim)", display: "block", marginBottom: "4px" }}>Monster Type</label>
+                      <select id="monster-select" className="input-field" value={selectedMonster} onChange={e => setSelectedMonster(e.target.value)} style={{ width: "100%", padding: "6px" }}>
+                        <option value="goblin">Goblin (CR 1/4)</option>
+                        <option value="kobold">Kobold (CR 1/8)</option>
+                        <option value="orc">Orc (CR 1/2)</option>
+                        <option value="skeleton">Skeleton (CR 1/4)</option>
+                        <option value="red_dragon">Red Dragon Wyrmling (CR 4)</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: "12px" }}>
+                      <label htmlFor="monster-count" style={{ fontSize: "0.8rem", color: "var(--text-dim)", display: "block", marginBottom: "4px" }}>Count (1-5)</label>
+                      <input id="monster-count" type="number" className="input-field" min={1} max={5} value={monsterCount} onChange={e => setMonsterCount(parseInt(e.target.value) || 1)} style={{ width: "100%", padding: "6px" }} />
+                    </div>
+                    <button type="submit" className="btn btn-primary" style={{ width: "100%" }} disabled={wsStatus !== "connected"}>
+                      ⚔️ Start Combat
+                    </button>
+                  </form>
+                )}
+              </div>
+
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Quick Dice</div>
                 <DicePanel onRoll={rollDice} disabled={wsStatus !== "connected"} />

@@ -87,6 +87,20 @@ async function seedStartingWorld(client: PoolClient, campaignId: string) {
     JSON.stringify(worldState),
     campaignId,
   ]);
+
+  // Seed initial NPCs for testing/immersion
+  await client.query(
+    `INSERT INTO public.npcs (campaign_id, name, role, location_id, is_alive, relationship_map, base_stats)
+     VALUES
+     ($1, $2, $3, $4, true, $5, $6),
+     ($1, $7, $8, $9, true, $10, $11),
+     ($1, $12, $13, $14, true, $15, $16)`,
+    [
+      campaignId, 'Eldric Ironhammer', 'Blacksmith', townId, '{}', JSON.stringify({ str: 18, cha: 12 }),
+      campaignId, 'Mira Shadowstep', 'Scout', wildernessId, '{}', JSON.stringify({ dex: 16, int: 14 }),
+      campaignId, 'Brother Thorne', 'Cleric', townId, '{}', JSON.stringify({ wis: 16, con: 14 })
+    ]
+  );
 }
 
 // POST /api/campaigns - Create a new campaign
@@ -342,6 +356,36 @@ router.get("/:id/world", authMiddleware, async (req: AuthenticatedRequest, res: 
   } catch (error) {
     console.error("Get campaign world error:", error);
     res.status(500).json({ error: "Internal server error fetching campaign world" });
+  }
+});
+
+// GET /api/campaigns/:id/locations/:locationId/npcs - Get NPCs at a specific location
+router.get("/:id/locations/:locationId/npcs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { id: campaignId, locationId } = req.params;
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const membership = await getMembership(campaignId, userId);
+    if (!membership) {
+      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
+    }
+
+    const npcsRes = await pool.query(
+      `SELECT id, campaign_id, name, role, location_id, is_alive, relationship_map, base_stats
+       FROM public.npcs
+       WHERE campaign_id = $1 AND location_id = $2 AND is_alive = true
+       ORDER BY name ASC`,
+      [campaignId, locationId]
+    );
+
+    res.json({ npcs: npcsRes.rows });
+  } catch (error) {
+    console.error("Get location NPCs error:", error);
+    res.status(500).json({ error: "Internal server error fetching NPCs" });
   }
 });
 

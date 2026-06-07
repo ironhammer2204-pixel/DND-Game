@@ -125,3 +125,6 @@ export const SKILL_TO_ATTRIBUTE: Record<SkillName, AttributeName> = {
   stealth: "dex",
   survival: "wis",
 };
+
+export * from "./monsters";
+

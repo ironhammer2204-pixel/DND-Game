@@ -145,7 +145,15 @@ export interface CombatParticipant {
   hp_max: number;
   initiative: number;
   conditions: string[];
+  death_save_successes?: number;
+  death_save_failures?: number;
+  ac: number;
+  attack_bonus: number;
+  damage_dice: string;
+  damage_modifier: number;
+  xp_value?: number;
 }
+
 
 export interface CombatEncounter {
   id: string;
@@ -197,7 +205,9 @@ export type ClientMessageType =
   | "CHAT_MESSAGE"
   | "JOIN_CAMPAIGN"
   | "RECONNECT"
-  | "COMBAT_ACTION";
+  | "COMBAT_ACTION"
+  | "START_COMBAT"
+  | "DEATH_SAVE_ROLL";
 
 export interface ClientMessageMap {
   ACTION_SUBMIT: {
@@ -224,6 +234,10 @@ export interface ClientMessageMap {
     action_type: "attack" | "dodge" | "use_item" | "end_turn";
     target_id?: string;
   };
+  START_COMBAT: {
+    monsters: { id: string; count: number }[];
+  };
+  DEATH_SAVE_ROLL: Record<string, never>;
 }
 
 export type ServerMessageType =
@@ -276,6 +290,10 @@ export interface ServerMessageMap {
   };
   WORLD_UPDATE: {
     location_id: string;
+    actor_id?: string;
+    actor_name?: string;
+    from_location?: string;
+    to_location?: string;
     changes: Record<string, any>;
   };
   ERROR: {

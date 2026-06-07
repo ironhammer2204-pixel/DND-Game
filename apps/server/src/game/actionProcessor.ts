@@ -165,6 +165,10 @@ async function processMovementAction(
     },
     worldUpdate: {
       location_id: targetLocation.id,
+      actor_id: participant.characterId,
+      actor_name: characterName,
+      from_location: currentLocation.name,
+      to_location: targetLocation.name,
       changes: {
         current_location_id: targetLocation.id,
         current_location_name: targetLocation.name,
