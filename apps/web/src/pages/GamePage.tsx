@@ -5,7 +5,7 @@ import { WsReconnectBanner } from "../components/WsReconnectBanner";
 import { DicePanel } from "../components/DicePanel";
 import { RACES, CLASSES } from "@dnd/shared";
 import { API_URL, WS_URL } from "../config";
-import type { Character, DiceType, ServerWSMessage, ServerMessageType } from "@dnd/shared";
+import type { Character, DiceType, Quest, ServerWSMessage, ServerMessageType } from "@dnd/shared";
 import type React from "react";
 
 interface ChatPayload { sender_name: string; text: string; }
@@ -59,6 +59,8 @@ export function GamePage() {
   const [copyToast, setCopyToast] = useState<"success" | "fail" | null>(null);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [inventoryError, setInventoryError] = useState("");
+  const [quests, setQuests] = useState<Quest[]>([]);
+  const [questError, setQuestError] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Combat spawning local states
@@ -103,6 +105,17 @@ export function GamePage() {
     }
   };
 
+  const fetchQuests = async (campaignId: string) => {
+    try {
+      setQuestError("");
+      const data = await apiFetch(`/api/campaigns/${campaignId}/quests`);
+      setQuests(data.quests ?? []);
+    } catch (err) {
+      console.error("Error fetching quests:", err);
+      setQuestError(err instanceof Error ? err.message : "Unable to load quests");
+    }
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [eventLogs]);
@@ -112,6 +125,7 @@ export function GamePage() {
     clearEvents();
     const loadTimer = window.setTimeout(() => {
       void fetchPartyCharacters(activeCampaign.id);
+      void fetchQuests(activeCampaign.id);
     }, 0);
     setWsStatus("connecting");
     const socket = new WebSocket(`${WS_URL}?token=${token}`);
@@ -125,6 +139,15 @@ export function GamePage() {
       try {
         const message = JSON.parse(event.data) as ServerWSMessage<ServerMessageType>;
         handleWsMessage(message, user.id, fetchPartyCharacters);
+        if (message.type === "QUEST_UPDATE") {
+          const { quest } = message.payload as { quest: Quest };
+          setQuests((current) => {
+            const existing = current.some((item) => item.id === quest.id);
+            return existing
+              ? current.map((item) => (item.id === quest.id ? quest : item))
+              : [...current, quest];
+          });
+        }
       } catch (err) { console.error("WS parse error:", err); }
     };
     socket.onclose = () => { setWsStatus("disconnected"); setWs(null); };
@@ -170,6 +193,28 @@ export function GamePage() {
     } catch (err) { setCharError(err instanceof Error ? err.message : "Failed to create character"); }
   };
 
+  const rollSkill = (skillName: string, bonus: number) => {
+    if (!ws || !myCharacter) return;
+    ws.send(JSON.stringify({
+      type: "DICE_REQUEST",
+      payload: { dice_type: "d20", context: `skill:${skillName}`, modifier: bonus },
+    }));
+  };
+
+  const toggleQuestObjective = async (quest: Quest, objectiveIndex: number, completed: boolean) => {
+    if (!activeCampaign || activeRole !== "dm") return;
+    try {
+      const data = await apiFetch(`/api/campaigns/${activeCampaign.id}/quests/${quest.id}/objective`, {
+        method: "PATCH",
+        body: JSON.stringify({ objective_index: objectiveIndex, completed }),
+      });
+      const updatedQuest = data.quest as Quest;
+      setQuests((current) => current.map((item) => (item.id === updatedQuest.id ? updatedQuest : item)));
+    } catch (err) {
+      setQuestError(err instanceof Error ? err.message : "Unable to update quest");
+    }
+  };
+
   const toggleInventoryEquip = async (item: InventoryRow) => {
     if (!myCharacter) return;
     try {
@@ -211,6 +256,26 @@ export function GamePage() {
   const armorBase = equippedArmor ? Number(equippedArmor.stats.ac_base) : 10;
   const allowsDexBonus = equippedArmor ? Boolean(equippedArmor.stats.dex_bonus) : true;
   const derivedAc = armorBase + (allowsDexBonus ? dexModifier : 0) + shieldBonus;
+  const proficiencyBonus = myCharacter ? 2 + Math.floor((myCharacter.level - 1) / 4) : 2;
+  const strModifier = myCharacter ? Math.floor((Number(myCharacter.attributes.str) - 10) / 2) : 0;
+  const attackBonus = proficiencyBonus + Math.max(strModifier, dexModifier);
+  const spellcastingAttributeByClass: Record<string, keyof Character["attributes"]> = {
+    Bard: "cha",
+    Cleric: "wis",
+    Druid: "wis",
+    Paladin: "cha",
+    Ranger: "wis",
+    Sorcerer: "cha",
+    Warlock: "cha",
+    Wizard: "int",
+  };
+  const spellcastingAttribute = myCharacter ? spellcastingAttributeByClass[myCharacter.class] : undefined;
+  const spellcastingModifier = myCharacter && spellcastingAttribute
+    ? Math.floor((Number(myCharacter.attributes[spellcastingAttribute]) - 10) / 2)
+    : 0;
+  const spellSaveDc = 8 + proficiencyBonus + spellcastingModifier;
+  const activeQuests = quests.filter((quest) => quest.status === "active");
+  const completedQuests = quests.filter((quest) => quest.status === "complete");
 
   return (
     <div className="game-page">
@@ -273,6 +338,49 @@ export function GamePage() {
             })}
             {partyCharacters.length === 0 && (
               <div className="member-list__empty">No adventurers have joined yet...</div>
+            )}
+          </div>
+
+          <div className="quest-log">
+            <div className="sidebar-section-title">Quest Log</div>
+            {questError && <div className="auth-message auth-message--error" role="alert">{questError}</div>}
+            {activeQuests.length === 0 && completedQuests.length === 0 ? (
+              <div className="member-list__empty">No quests tracked yet.</div>
+            ) : (
+              <>
+                {activeQuests.map((quest) => (
+                  <div key={quest.id} className="quest-card">
+                    <div className="quest-card__header">
+                      <span className="quest-card__title">{quest.title}</span>
+                      <span className="quest-card__type">{quest.type}</span>
+                    </div>
+                    {quest.description && <p className="quest-card__desc">{quest.description}</p>}
+                    <div className="quest-objectives">
+                      {quest.objectives.map((objective, index) => (
+                        <label key={`${quest.id}-${index}`} className="quest-objective">
+                          <input
+                            type="checkbox"
+                            checked={objective.completed}
+                            disabled={activeRole !== "dm"}
+                            onChange={(event) => void toggleQuestObjective(quest, index, event.target.checked)}
+                          />
+                          <span>{objective.text}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {completedQuests.length > 0 && (
+                  <div className="quest-complete-list">
+                    <div className="sidebar-section-title">Completed</div>
+                    {completedQuests.map((quest) => (
+                      <div key={quest.id} className="quest-card quest-card--complete">
+                        <span className="quest-card__title">{quest.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </aside>
@@ -554,6 +662,8 @@ export function GamePage() {
                 <div className="stat-card"><div className="stat-card__val">{myCharacter.gold}g</div><div className="stat-card__lbl">Gold</div></div>
                 <div className="stat-card"><div className="stat-card__val">{derivedAc}</div><div className="stat-card__lbl">AC</div></div>
                 <div className="stat-card"><div className="stat-card__val">{equippedItems.length}</div><div className="stat-card__lbl">Equipped</div></div>
+                <div className="stat-card"><div className="stat-card__val">{attackBonus >= 0 ? `+${attackBonus}` : attackBonus}</div><div className="stat-card__lbl">Attack</div></div>
+                <div className="stat-card"><div className="stat-card__val">{spellcastingAttribute ? spellSaveDc : "-"}</div><div className="stat-card__lbl">Spell DC</div></div>
               </div>
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Attributes &mdash; click to roll d20</div>
@@ -577,10 +687,17 @@ export function GamePage() {
                 <div className="sidebar-section-title">Skills</div>
                 <div className="skill-list" role="list">
                   {(Object.entries(myCharacter.skills || {}) as Array<[string, number]>).map(([skill, bonus]) => (
-                    <div key={skill} role="listitem" className="skill-row">
+                    <button
+                      key={skill}
+                      role="listitem"
+                      className="skill-row"
+                      onClick={() => rollSkill(skill, Number(bonus))}
+                      disabled={wsStatus !== "connected"}
+                      aria-label={`Roll ${skill} with ${Number(bonus) >= 0 ? "+" : ""}${bonus}`}
+                    >
                       <span className="skill-row__name">{skill.charAt(0).toUpperCase() + skill.slice(1)}</span>
                       <span className="skill-row__bonus">{Number(bonus) >= 0 ? "+" : ""}{bonus}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>

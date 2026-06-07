@@ -20,12 +20,14 @@ Last updated: 2026-06-07 (comprehensive audit completed)
 - **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested
 - **Phase 2 (Game systems): PARTIALLY COMPLETE (~65%)**
   - Complete: Dice engine, Action processor (with skill checks), World system (server-side), Inventory system, Event log UI
-  - Character sheet is partially complete: attributes, skills, HP, gold, equipped items, and derived AC are displayed
-  - Still pending: location UI, quest system, gold transaction ledger, attack bonus/spell save DC, level-up logic
+  - Character sheet is partially complete: attributes, skills, HP, gold, equipped items, AC, attack bonus, and spell save DC are displayed
+  - Still pending: location UI, gold transaction ledger, level-up logic
 - Recent fixes:
   - Fixed action processor to properly dispatch skill check actions (rolls d20 + skill modifier)
   - Added skills display to character sheet UI
   - Added inventory REST endpoints, 20 starter item seeds, starter gear, equip/drop UI, and derived AC from equipped armor/shields
+  - Added quest REST endpoints, starter quests, QuestLog UI, `QUEST_UPDATE` broadcasts, and DM objective toggles
+  - Added character-sheet attack bonus, spell save DC, and skill roll buttons
   - Preserved Phase 3 Living World and Emergent Class architecture notes from the remote branch
 
 ---
@@ -838,18 +840,18 @@ Respond with 2â€“4 paragraphs of narration only. No meta-commentary.
 - [ ] Gold transactions â€” server-only, logged in event_log
 
 #### Quest system
-- [ ] Add `POST /api/campaigns/:id/quests` â€” create quest (server/DM only)
-- [ ] Add `GET /api/campaigns/:id/quests` â€” list active + completed quests
-- [ ] Add `PATCH /api/campaigns/:id/quests/:id/objective` â€” mark objective complete (server only)
-- [ ] Build QuestLog UI â€” active quests, objectives with checkmarks, completed section
-- [ ] Add `QUEST_UPDATE` WebSocket broadcast on any quest change
-- [ ] Seed 3 starter quests for new campaigns
+- [x] Add `POST /api/campaigns/:id/quests` â€” create quest (server/DM only)
+- [x] Add `GET /api/campaigns/:id/quests` â€” list active + completed quests
+- [x] Add `PATCH /api/campaigns/:id/quests/:id/objective` â€” mark objective complete (server only)
+- [x] Build QuestLog UI â€” active quests, objectives with checkmarks, completed section
+- [x] Add `QUEST_UPDATE` WebSocket broadcast on any quest change
+- [x] Seed 3 starter quests for new campaigns
 
 #### Character sheet
 - [x] Build basic CharacterSheet panel: attributes, skills, HP, gold â€” **PARTIAL**: all core attributes now shown including skills list
-- [ ] Show derived stats: AC (from equipped armor), attack bonus, spell save DC — **PARTIAL**: AC from equipped armor/shield is implemented; attack bonus and spell save DC still pending
+- [x] Show derived stats: AC (from equipped armor), attack bonus, spell save DC
 - [ ] Add level-up logic: XP threshold check, HP increase, stat point allocation
-- [ ] Skill check roll button on each skill (auto-rolls d20 + skill modifier)
+- [x] Skill check roll button on each skill (auto-rolls d20 + skill modifier)
 - [x] Character sheet updates live via `GAME_EVENT` broadcast
 
 #### Event log UI
@@ -954,8 +956,8 @@ Respond with 2â€“4 paragraphs of narration only. No meta-commentary.
 #### Phase 2 catch-up (still needed before Phase 3 is playable)
 - [ ] **Build location/world navigation UI** â€” players can see locations, see connections, click to move (blocks all Phase 2 completion)
 - [x] Build inventory system REST endpoints + UI (needed before equipment affects combat)
-- [ ] Build quest log UI (needed for faction-generated quests)
-- [ ] Seed item catalog and starter quests
+- [x] Build quest log UI (needed for faction-generated quests)
+- [x] Seed item catalog and starter quests
 
 **Phase 3 done when:** Party can fight a named Nemesis who remembers them by name, the world pressure changes based on faction power, a new quest appears because an NPC's agenda progressed, a character unlocks a hidden class through their behaviour pattern, and after Session 1 the party logs in to find the world has changed while they were gone.
 
@@ -1017,6 +1019,10 @@ GET    /api/campaigns/:id                # get campaign details
 GET    /api/campaigns/:id/members        # list campaign members and linked characters
 GET    /api/campaigns/:id/events         # recent event log catch-up
 GET    /api/campaigns/:id/world          # locations, connections, and campaign world state
+GET    /api/campaigns/:id/quests         # list active and completed quests
+GET    /api/campaigns/:id/quests/:questId # retrieve one quest
+POST   /api/campaigns/:id/quests         # DM creates a quest
+PATCH  /api/campaigns/:id/quests/:questId/objective # DM toggles a quest objective
 
 POST   /api/characters                   # create character
 GET    /api/characters/:id               # retrieve character details
@@ -1030,8 +1036,6 @@ PATCH  /api/characters/:id/inventory/:itemId/equip # equip or unequip item
 // === Planned REST Endpoints (Phase 2 & 3) ===
 PATCH  /api/characters/:id               # server-only mutations
 
-GET    /api/campaigns/:id/quests
-GET    /api/campaigns/:id/quests/:questId
 ```
 
 All mutation endpoints require auth middleware. Character stat updates are server-internal only â€” no public PATCH route for HP, gold, or inventory.
@@ -1078,4 +1082,4 @@ VITE_SUPABASE_ANON_KEY=...
 
 ---
 
-*brain.md — last updated: 2026-06-07 inventory update rebased onto Phase 3 architecture notes*
+*brain.md — last updated: 2026-06-07 quest and character sheet update*
