@@ -1,5 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { pool } from "../db/client";
+import { dmService } from "../ai/dmService";
+import { buildCampaignSnapshot, getLocationContext, getActiveNemesisContext, getCampaignLocationId, getPartyContext } from "../ai/contextBuilder";
 import { MONSTERS, CombatParticipant, CombatEncounter } from "@dnd/shared";
 import { rollDice, rollWithAdvantage, rollWithDisadvantage } from "./diceEngine";
 import { RoomManager } from "../websocket/roomManager";
@@ -300,6 +302,33 @@ export async function processCombatAction(
     await client.query("COMMIT");
 
     RoomManager.broadcastToRoom(campaignId, "COMBAT_UPDATE", { encounter });
+
+  if (dmService.isEnabled()) {
+    const locationId = await getCampaignLocationId(client, campaignId);
+    const location = locationId ? await getLocationContext(client, locationId) : null;
+    const nemesis = await getActiveNemesisContext(client, campaignId);
+    
+    if (location) {
+      dmService.enqueueCombatStart(pool, encounter.id, campaignId, {
+        party: encounter.participants
+          .filter(p => p.type === "player")
+          .map(p => ({
+            name: p.name,
+            race: "human",
+            class_name: "fighter",
+            hp_current: p.hp_current,
+            hp_max: p.hp_max,
+          })),
+        location,
+        npcs: [],
+        nemesis,
+        enemyNames: encounter.participants
+          .filter(p => p.type === "enemy")
+          .map(p => p.name),
+        initiativeOrder: encounter.turn_order.map(p => p.name),
+      });
+    }
+  }
     processActiveTurn(campaignId, encounter.id);
 
     return encounter;
@@ -428,7 +457,7 @@ export async function rollDeathSave(campaignId: string, userId: string): Promise
 }
 
 async function performAttackAction(
-  client: PoolClient,
+  client: any,
   campaignId: string,
   attacker: CombatParticipant,
   targetId: string,
@@ -442,8 +471,15 @@ async function performAttackAction(
   const target = encounter.turn_order[targetIdx];
 
   // Determine advantage/disadvantage
-  let rollMode: string = "normal";
-  if (target.conditions.includes("dodging")) {
+  const hasAdvantage = target.conditions.includes("stunned") || target.conditions.includes("paralysed");
+  const hasDisadvantage = attacker.conditions.includes("poisoned") || target.conditions.includes("dodging");
+
+  let rollMode: "normal" | "advantage" | "disadvantage" = "normal";
+  if (hasAdvantage && hasDisadvantage) {
+    rollMode = "normal";
+  } else if (hasAdvantage) {
+    rollMode = "advantage";
+  } else if (hasDisadvantage) {
     rollMode = "disadvantage";
   }
 
@@ -532,7 +568,7 @@ async function performAttackAction(
   );
 }
 
-async function advanceTurn(client: PoolClient, encounter: CombatEncounter): Promise<void> {
+async function advanceTurn(client: any, encounter: CombatEncounter): Promise<void> {
   // 1. Check if combat is resolved (all players dead/downed, or all enemies dead)
   const alivePlayers = encounter.participants.filter((p) => p.type === "player" && p.hp_current > 0);
   const unstablePlayers = encounter.participants.filter(
@@ -547,7 +583,10 @@ async function advanceTurn(client: PoolClient, encounter: CombatEncounter): Prom
   }
 
   // Defeat: no active player, and no unstable player left to save themselves
-  if (alivePlayers.length === 0 && unstablePlayers.length === 0) {
+  const survivingPlayers = encounter.participants.filter(
+    (p) => p.type === "player" && (p.hp_current > 0 || p.conditions.includes("stable"))
+  );
+  if (survivingPlayers.length === 0) {
     await resolveCombatWithDefeat(client, encounter);
     return;
   }
@@ -587,7 +626,7 @@ async function advanceTurn(client: PoolClient, encounter: CombatEncounter): Prom
   await saveEncounter(client, encounter);
 }
 
-async function resolveCombatWithVictory(client: PoolClient, encounter: CombatEncounter): Promise<void> {
+async function resolveCombatWithVictory(client: any, encounter: CombatEncounter): Promise<void> {
   encounter.status = "resolved";
   await client.query("UPDATE public.combat_encounters SET status = 'resolved' WHERE id = $1", [encounter.id]);
   await evaluateCombatForNemesisPromotion(client, encounter, "victory");
@@ -638,7 +677,7 @@ async function resolveCombatWithVictory(client: PoolClient, encounter: CombatEnc
   );
 }
 
-async function resolveCombatWithDefeat(client: PoolClient, encounter: CombatEncounter): Promise<void> {
+async function resolveCombatWithDefeat(client: any, encounter: CombatEncounter): Promise<void> {
   encounter.status = "resolved";
   await client.query("UPDATE public.combat_encounters SET status = 'resolved' WHERE id = $1", [encounter.id]);
   await evaluateCombatForNemesisPromotion(client, encounter, "defeat");
@@ -673,6 +712,26 @@ export function processActiveTurn(campaignId: string, encounterId: string) {
       const activeParticipant = encounter.turn_order[encounter.current_turn_index];
       if (!activeParticipant) {
         await client.query("COMMIT");
+        return;
+      }
+
+      // Check condition-driven turn skip
+      if (activeParticipant.conditions.includes("stunned") || activeParticipant.conditions.includes("paralysed")) {
+        const conditionText = activeParticipant.conditions.includes("stunned") ? "stunned" : "paralysed";
+        const skipPayload = {
+          action_type: "turn_skip",
+          text: `${activeParticipant.name} is ${conditionText} and skips their turn.`,
+        };
+        await client.query(
+          "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'combat', $2, $3)",
+          [campaignId, activeParticipant.type === "player" ? activeParticipant.id : null, JSON.stringify(skipPayload)]
+        );
+
+        await advanceTurn(client, encounter);
+        await client.query("COMMIT");
+
+        RoomManager.broadcastToRoom(campaignId, "COMBAT_UPDATE", { encounter });
+        processActiveTurn(campaignId, encounter.id);
         return;
       }
 
@@ -756,4 +815,81 @@ export function processActiveTurn(campaignId: string, encounterId: string) {
   }, 1500); // 1.5-second artificial delay for monster turns or disconnect skips
 
   turnTimers.set(encounterId, timer);
+}
+
+export async function updateConditions(
+  campaignId: string,
+  participantId: string,
+  condition: "poisoned" | "stunned" | "paralysed" | "dodging",
+  action: "add" | "remove"
+): Promise<CombatEncounter> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const encounter = await getActiveEncounter(client, campaignId);
+    if (!encounter) {
+      throw new Error("No active combat encounter found.");
+    }
+
+    const pIdx = encounter.participants.findIndex((p) => p.id === participantId);
+    if (pIdx === -1) {
+      throw new Error("Participant not found in encounter.");
+    }
+
+    const participant = encounter.participants[pIdx];
+    if (action === "add") {
+      if (!participant.conditions.includes(condition)) {
+        participant.conditions.push(condition);
+      }
+    } else {
+      participant.conditions = participant.conditions.filter((c) => c !== condition);
+    }
+
+    // Update in encounter lists
+    encounter.participants[pIdx] = participant;
+    const tIdx = encounter.turn_order.findIndex((p) => p.id === participantId);
+    if (tIdx !== -1) {
+      encounter.turn_order[tIdx] = participant;
+    }
+
+    // Log condition change
+    const text = `DM ${action === "add" ? "applied" : "removed"} condition '${condition}' ${action === "add" ? "to" : "from"} ${participant.name}.`;
+    const logPayload = {
+      action_type: "condition_update",
+      text,
+      participant_id: participantId,
+      condition,
+      action,
+    };
+    await client.query(
+      "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2)",
+      [campaignId, JSON.stringify(logPayload)]
+    );
+
+    // Save encounter
+    await saveEncounter(client, encounter);
+
+    await client.query("COMMIT");
+
+    RoomManager.broadcastToRoom(campaignId, "COMBAT_UPDATE", { encounter });
+
+    // If a turn skip condition was added to the active participant, process it immediately
+    const activeParticipant = encounter.turn_order[encounter.current_turn_index];
+    if (
+      activeParticipant &&
+      activeParticipant.id === participantId &&
+      action === "add" &&
+      (condition === "stunned" || condition === "paralysed")
+    ) {
+      processActiveTurn(campaignId, encounter.id);
+    }
+
+    return encounter;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

@@ -6,7 +6,7 @@ import { DicePanel } from "../components/DicePanel";
 import { NemesisGallery } from "../components/NemesisGallery";
 import { RACES, CLASSES } from "@dnd/shared";
 import { API_URL, WS_URL } from "../config";
-import type { Character, DiceType, Quest, Nemesis, Faction, ServerWSMessage, ServerMessageType } from "@dnd/shared";
+import type { Character, DiceType, Quest, Nemesis, Faction, ServerWSMessage, ServerMessageType, NPC } from "@dnd/shared";
 import type React from "react";
 
 interface ChatPayload { sender_name: string; text: string; }
@@ -43,13 +43,37 @@ async function copyToClipboard(text: string): Promise<boolean> {
   return ok;
 }
 
+const CLASS_STARTING_STATS: Record<string, { attributes: Record<string, number>; hp: number }> = {
+  Barbarian: { attributes: { str: 15, dex: 13, con: 14, int: 8, wis: 10, cha: 10 }, hp: 14 },
+  Bard: { attributes: { str: 8, dex: 14, con: 12, int: 10, wis: 12, cha: 15 }, hp: 9 },
+  Cleric: { attributes: { str: 14, dex: 8, con: 12, int: 10, wis: 15, cha: 10 }, hp: 9 },
+  Druid: { attributes: { str: 10, dex: 12, con: 13, int: 10, wis: 15, cha: 8 }, hp: 9 },
+  Fighter: { attributes: { str: 15, dex: 13, con: 14, int: 10, wis: 10, cha: 8 }, hp: 12 },
+  Monk: { attributes: { str: 10, dex: 15, con: 12, int: 10, wis: 14, cha: 8 }, hp: 9 },
+  Paladin: { attributes: { str: 15, dex: 8, con: 13, int: 10, wis: 12, cha: 14 }, hp: 11 },
+  Ranger: { attributes: { str: 12, dex: 15, con: 13, int: 10, wis: 14, cha: 8 }, hp: 11 },
+  Rogue: { attributes: { str: 8, dex: 15, con: 12, int: 13, wis: 10, cha: 14 }, hp: 9 },
+  Sorcerer: { attributes: { str: 8, dex: 13, con: 14, int: 10, wis: 10, cha: 15 }, hp: 8 },
+  Warlock: { attributes: { str: 8, dex: 13, con: 14, int: 10, wis: 10, cha: 15 }, hp: 10 },
+  Wizard: { attributes: { str: 8, dex: 13, con: 14, int: 15, wis: 10, cha: 10 }, hp: 8 },
+};
+
+const getAvailableStatPoints = (char: Character) => {
+  const defaults = CLASS_STARTING_STATS[char.class];
+  if (!defaults) return 0;
+  const startingSum = Object.values(defaults.attributes).reduce((s, v) => s + v, 0);
+  const currentSum = Object.values(char.attributes).reduce((s, v) => s + v, 0);
+  const allowed = startingSum + 2 * (char.level - 1);
+  return Math.max(0, allowed - currentSum);
+};
+
 export function GamePage() {
   const { token, user, clearSession } = useAuthStore();
   const {
     activeCampaign, activeRole, partyCharacters, myCharacter, eventLogs,
     ws, wsStatus, setPartyCharacters, setMyCharacter, clearEvents,
     setWs, setWsStatus, handleWsMessage, setActiveCampaign,
-    activeCombat
+    activeCombat, locations, setLocations, activeRoll, dismissActiveRoll
   } = useGameStore();
 
   const [chatMessage, setChatMessage] = useState("");
@@ -63,6 +87,12 @@ export function GamePage() {
   const [quests, setQuests] = useState<Quest[]>([]);
   const [questError, setQuestError] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // New location and ASI states
+  const [currentLocationNpcs, setCurrentLocationNpcs] = useState<NPC[]>([]);
+  const [showNpcPopover, setShowNpcPopover] = useState(false);
+  const [showAsiModal, setShowAsiModal] = useState(false);
+  const [tempAttributes, setTempAttributes] = useState<Record<string, number>>({});
 
   // Nemesis system state
   const [nemeses, setNemeses] = useState<Nemesis[]>([]);
@@ -137,6 +167,129 @@ export function GamePage() {
     } catch (err) { console.error("Error fetching factions:", err); }
   };
 
+  const fetchWorld = async (campaignId: string) => {
+    try {
+      const data = await apiFetch(`/api/campaigns/${campaignId}/world`);
+      if (data.locations) {
+        setLocations(data.locations);
+      }
+    } catch (err) {
+      console.error("Error fetching world details:", err);
+    }
+  };
+
+
+
+  const handleTravel = (targetLocationId: string) => {
+    if (!ws) return;
+    ws.send(JSON.stringify({
+      type: "ACTION_SUBMIT",
+      payload: {
+        type: "exploration",
+        text: `Travel to destination`,
+        target_location_id: targetLocationId
+      }
+    }));
+  };
+
+  const handleToggleCondition = (participantId: string, condition: "poisoned" | "stunned" | "paralysed" | "dodging", action: "add" | "remove") => {
+    if (!ws) return;
+    ws.send(JSON.stringify({
+      type: "UPDATE_CONDITIONS",
+      payload: { participant_id: participantId, condition, action }
+    }));
+  };
+
+  const handleAllocateStats = async () => {
+    if (!myCharacter || !activeCampaign) return;
+    try {
+      const data = await apiFetch(`/api/characters/${myCharacter.id}/allocate-stats`, {
+        method: "POST",
+        body: JSON.stringify({ attributes: tempAttributes }),
+      });
+      setMyCharacter(data.character);
+      setShowAsiModal(false);
+      void fetchPartyCharacters(activeCampaign.id);
+    } catch (err) {
+      console.error("Error allocating stats:", err);
+    }
+  };
+
+  const playDiceRollSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+
+      const createNoiseBurst = (time: number, volume: number, duration: number) => {
+        const bufferSize = ctx.sampleRate * duration;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+
+        const noiseSource = ctx.createBufferSource();
+        noiseSource.buffer = buffer;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.value = 800;
+        filter.Q.value = 1.5;
+
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(volume, time);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, time + duration - 0.01);
+
+        noiseSource.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        noiseSource.start(time);
+      };
+
+      const now = ctx.currentTime;
+      createNoiseBurst(now, 0.25, 0.12);
+      createNoiseBurst(now + 0.18, 0.15, 0.1);
+      createNoiseBurst(now + 0.35, 0.08, 0.08);
+      createNoiseBurst(now + 0.5, 0.04, 0.06);
+    } catch (err) {
+      console.error("Web Audio API failed to play sound:", err);
+    }
+  };
+
+  const currentLocationId = myCharacter
+    ? (activeCampaign?.world_state?.character_locations?.[myCharacter.id] || activeCampaign?.world_state?.starting_location_id)
+    : activeCampaign?.world_state?.starting_location_id;
+
+  const currentLocation = locations.find((l) => l.id === currentLocationId);
+
+  useEffect(() => {
+    const loadNpcs = async () => {
+      if (activeCampaign && currentLocationId) {
+        try {
+          const data = await apiFetch(`/api/campaigns/${activeCampaign.id}/locations/${currentLocationId}/npcs`);
+          setCurrentLocationNpcs(data.npcs || []);
+        } catch (err) {
+          console.error("Error fetching location NPCs:", err);
+        }
+      } else {
+        setCurrentLocationNpcs([]);
+      }
+    };
+    void loadNpcs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCampaign?.id, currentLocationId, locations]);
+
+  useEffect(() => {
+    if (!activeRoll) return;
+    playDiceRollSound();
+    const timer = setTimeout(() => {
+      dismissActiveRoll();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [activeRoll, dismissActiveRoll]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [eventLogs]);
@@ -149,6 +302,7 @@ export function GamePage() {
       void fetchQuests(activeCampaign.id);
       void fetchNemeses(activeCampaign.id);
       void fetchFactions(activeCampaign.id);
+      void fetchWorld(activeCampaign.id);
     }, 0);
     setWsStatus("connecting");
     const socket = new WebSocket(`${WS_URL}?token=${token}`);
@@ -436,6 +590,78 @@ export function GamePage() {
             </div>
           )}
 
+          {/* Location HUD */}
+          {currentLocation ? (
+            <div className="location-hud">
+              <div className="location-hud__main">
+                <div className="location-hud__details">
+                  <div className="location-hud__type-row">
+                    <span className={`location-hud__type-tag location-hud__type-tag--${currentLocation.type}`}>{currentLocation.type}</span>
+                    <h3 className="location-hud__name">{currentLocation.name}</h3>
+                  </div>
+                  <p className="location-hud__desc">{currentLocation.description}</p>
+                </div>
+
+                <div className="location-hud__npc-section">
+                  <button 
+                    className="location-hud__npc-badge" 
+                    onClick={() => setShowNpcPopover(!showNpcPopover)}
+                    title="View present NPCs"
+                  >
+                    👥 NPCs: {currentLocationNpcs.length}
+                  </button>
+                  {showNpcPopover && (
+                    <div className="npc-popover">
+                      <div className="npc-popover__header">
+                        <h4>NPCs Present</h4>
+                        <button className="npc-popover__close" onClick={() => setShowNpcPopover(false)}>✕</button>
+                      </div>
+                      <div className="npc-popover__list">
+                        {currentLocationNpcs.length === 0 ? (
+                          <div className="npc-popover__empty">No NPCs here.</div>
+                        ) : (
+                          currentLocationNpcs.map((npc) => (
+                            <div key={npc.id} className="npc-popover__item">
+                              <span className="npc-popover__name">{npc.name}</span>
+                              {npc.role && <span className="npc-popover__role">({npc.role})</span>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="location-hud__connections">
+                <span className="location-hud__connections-title">Travel paths:</span>
+                <div className="location-hud__connections-list">
+                  {currentLocation.connected_locations.map((connId) => {
+                    const connLoc = locations.find((l) => l.id === connId);
+                    if (!connLoc) return null;
+                    return (
+                      <button
+                        key={connId}
+                        className="btn btn-ghost location-hud__travel-btn"
+                        onClick={() => handleTravel(connId)}
+                        disabled={wsStatus !== "connected"}
+                      >
+                        📍 {connLoc.name}
+                      </button>
+                    );
+                  })}
+                  {currentLocation.connected_locations.length === 0 && (
+                    <span className="location-hud__no-connections">No connected paths found.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="location-hud location-hud--empty">
+              <span>Loading world travel details...</span>
+            </div>
+          )}
+
           <div className="chat-tab-bar">
             <button
               className={`chat-tab-btn ${activeTab === "chat" ? "chat-tab-btn--active" : ""}`}
@@ -524,6 +750,33 @@ export function GamePage() {
                         )}
                         {isStable && <span className="stable-badge" style={{ color: "var(--success-green)" }}>Stable</span>}
                       </div>
+
+                      {/* DM Condition Manager */}
+                      {activeRole === "dm" && (
+                        <div className="combat-p-card__dm-conditions" style={{ marginTop: "6px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "4px", display: "flex", gap: "2px", flexWrap: "wrap" }}>
+                          {["poisoned", "stunned", "paralysed", "dodging"].map((cond) => {
+                            const hasCond = p.conditions.includes(cond);
+                            return (
+                              <button
+                                key={cond}
+                                onClick={() => handleToggleCondition(p.id, cond as "poisoned" | "stunned" | "paralysed" | "dodging", hasCond ? "remove" : "add")}
+                                style={{
+                                  fontSize: "0.65rem",
+                                  padding: "2px 4px",
+                                  background: hasCond ? "var(--accent-gold)" : "rgba(255,255,255,0.05)",
+                                  color: hasCond ? "#000" : "var(--text-dim)",
+                                  border: "1px solid rgba(255,255,255,0.1)",
+                                  borderRadius: "3px",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s"
+                                }}
+                              >
+                                {cond.substring(0, 3)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -614,7 +867,16 @@ export function GamePage() {
             {eventLogs.map((log) => {
               if (log.type === "system") {
                 const p = log.payload as { text: string };
-                return <div key={log.id} className="chat-card chat-card--system" role="note"><span>{p.text}</span></div>;
+                return (
+                  <div key={log.id} className="chat-card chat-card--system" role="note">
+                    <span>{p.text}</span>
+                    {log.ai_narration && (
+                      <div className="chat-card__narration" style={{ fontStyle: "italic", marginTop: "8px", color: "var(--accent-gold)", fontSize: "0.9em", borderTop: "1px solid rgba(184, 134, 11, 0.3)", paddingTop: "8px" }}>
+                        ✨ {log.ai_narration}
+                      </div>
+                    )}
+                  </div>
+                );
               }
               if (log.type === "chat") {
                 const p = log.payload as ChatPayload;
@@ -628,6 +890,11 @@ export function GamePage() {
                       </time>
                     </div>
                     <p className="chat-card__text">{p.text}</p>
+                    {log.ai_narration && (
+                      <div className="chat-card__narration" style={{ fontStyle: "italic", marginTop: "8px", color: "var(--accent-gold)", fontSize: "0.9em", borderTop: "1px solid rgba(184, 134, 11, 0.3)", paddingTop: "8px" }}>
+                        ✨ {log.ai_narration}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -651,6 +918,26 @@ export function GamePage() {
                       </div>
                       <div className="roll-result__total" aria-label={`Total: ${p.final}`}>{p.final}</div>
                     </div>
+                    {log.ai_narration && (
+                      <div className="chat-card__narration" style={{ fontStyle: "italic", marginTop: "8px", color: "var(--accent-gold)", fontSize: "0.9em", borderTop: "1px solid rgba(184, 134, 11, 0.3)", paddingTop: "8px" }}>
+                        ✨ {log.ai_narration}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              if (log.type === "combat" || log.type === "quest") {
+                const p = log.payload as { text?: string };
+                // Try to extract some meaningful text, or just show the narration
+                
+                return (
+                  <div key={log.id} className="chat-card chat-card--system" role="note">
+                    {p.text && <span>{p.text}</span>}
+                    {log.ai_narration && (
+                      <div className="chat-card__narration" style={{ fontStyle: "italic", marginTop: p.text ? "8px" : "0", color: "var(--accent-gold)", fontSize: "0.9em", borderTop: p.text ? "1px solid rgba(184, 134, 11, 0.3)" : "none", paddingTop: p.text ? "8px" : "0" }}>
+                        ✨ {log.ai_narration}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -749,6 +1036,31 @@ export function GamePage() {
                 <div className="stat-card"><div className="stat-card__val">{attackBonus >= 0 ? `+${attackBonus}` : attackBonus}</div><div className="stat-card__lbl">Attack</div></div>
                 <div className="stat-card"><div className="stat-card__val">{spellcastingAttribute ? spellSaveDc : "-"}</div><div className="stat-card__lbl">Spell DC</div></div>
               </div>
+
+              {/* ASI Point Allocation Alert Banner */}
+              {myCharacter && !activeCombat && getAvailableStatPoints(myCharacter) > 0 && (
+                <div className="asi-banner" style={{
+                  background: "rgba(184, 134, 11, 0.15)",
+                  border: "1px solid var(--accent-gold)",
+                  borderRadius: "6px",
+                  padding: "10px",
+                  marginTop: "12px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center"
+                }}>
+                  <div className="asi-banner__text" style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>
+                    ✨ <strong>{getAvailableStatPoints(myCharacter)} Points Available!</strong>
+                  </div>
+                  <button className="btn btn-gold asi-banner__btn" onClick={() => {
+                    setTempAttributes({ ...myCharacter.attributes });
+                    setShowAsiModal(true);
+                  }} style={{ padding: "4px 8px", fontSize: "0.8rem" }}>
+                    Allocate
+                  </button>
+                </div>
+              )}
+
               <div className="right-panel__section">
                 <div className="sidebar-section-title">Attributes &mdash; click to roll d20</div>
                 <div className="attr-list" role="list">
@@ -855,6 +1167,170 @@ export function GamePage() {
           )}
         </aside>
       </div>
+
+      {/* ASI Allocation Modal */}
+      {showAsiModal && myCharacter && (
+        <dialog className="modal-dialog" open style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          background: "var(--bg-dark)",
+          border: "1px solid var(--border-dark)",
+          borderRadius: "12px",
+          padding: "24px",
+          zIndex: 1000,
+          width: "360px",
+          boxShadow: "0 10px 25px rgba(0,0,0,0.5)"
+        }}>
+          <div className="modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <h3 style={{ margin: 0, fontFamily: "var(--font-cinzel)", color: "var(--accent-gold)" }}>ASI Stat Allocator</h3>
+            <button type="button" className="btn-close" onClick={() => setShowAsiModal(false)} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
+          </div>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-dim)", marginBottom: "16px" }}>
+            Allocate up to {getAvailableStatPoints(myCharacter)} points. Attributes are capped at 20.
+          </p>
+          
+          <div className="asi-list" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {Object.keys(myCharacter.attributes).map((attrKey) => {
+              const attr = attrKey as keyof typeof myCharacter.attributes;
+              const currentVal = myCharacter.attributes[attr];
+              const tempVal = tempAttributes[attr] ?? currentVal;
+              
+              const spentPoints = Object.entries(tempAttributes).reduce(
+                (sum, [k, v]) => sum + (v - myCharacter.attributes[k as keyof typeof myCharacter.attributes]),
+                0
+              );
+              const available = getAvailableStatPoints(myCharacter);
+              const canIncrease = tempVal < 20 && spentPoints < available;
+              const canDecrease = tempVal > currentVal;
+
+              return (
+                <div key={attr} className="asi-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="asi-row__label" style={{ fontWeight: "600", fontSize: "0.9rem", color: "var(--text-light)" }}>{attr.toUpperCase()} ({currentVal})</span>
+                  <div className="asi-row__controls" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <button 
+                      type="button"
+                      className="btn btn-ghost asi-btn"
+                      onClick={() => setTempAttributes(prev => ({ ...prev, [attr]: Math.max(currentVal, (prev[attr] ?? currentVal) - 1) }))}
+                      disabled={!canDecrease}
+                      style={{ padding: "2px 8px" }}
+                    >
+                      -
+                    </button>
+                    <span className="asi-val" style={{ width: "20px", textAlign: "center", fontWeight: "bold", color: "var(--accent-gold)" }}>{tempVal}</span>
+                    <button 
+                      type="button"
+                      className="btn btn-ghost asi-btn"
+                      onClick={() => setTempAttributes(prev => ({ ...prev, [attr]: Math.min(20, (prev[attr] ?? currentVal) + 1) }))}
+                      disabled={!canIncrease}
+                      style={{ padding: "2px 8px" }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {(() => {
+            const spentPoints = Object.entries(tempAttributes).reduce(
+              (sum, [k, v]) => sum + (v - myCharacter.attributes[k as keyof typeof myCharacter.attributes]),
+              0
+            );
+            const available = getAvailableStatPoints(myCharacter);
+            const remaining = available - spentPoints;
+
+            return (
+              <div className="asi-footer" style={{ marginTop: "20px", paddingTop: "12px", borderTop: "1px solid var(--border-dark)", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <span className="asi-remaining" style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>Remaining Points: <strong style={{ color: "var(--accent-gold)" }}>{remaining}</strong></span>
+                <div className="asi-actions" style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowAsiModal(false)}>Cancel</button>
+                  <button 
+                    type="button"
+                    className="btn btn-gold" 
+                    onClick={handleAllocateStats}
+                    disabled={spentPoints === 0}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </dialog>
+      )}
+
+      {/* Dice Roll Overlay */}
+      {activeRoll && (
+        <div className="dice-overlay" role="dialog" aria-modal="true" style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "rgba(0, 0, 0, 0.85)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 2000,
+          backdropFilter: "blur(6px)"
+        }}>
+          <div className="dice-overlay__container" style={{
+            background: "rgba(10, 11, 20, 0.95)",
+            border: "2px solid var(--accent-gold)",
+            borderRadius: "16px",
+            padding: "32px",
+            textAlign: "center",
+            width: "300px",
+            boxShadow: "0 15px 35px rgba(0,0,0,0.8)"
+          }}>
+            <div className="dice-overlay__roller" style={{ fontSize: "1.1rem", fontWeight: "bold", color: "var(--text-light)", marginBottom: "4px" }}>
+              {activeRoll.roller_name}
+            </div>
+            <div className="dice-overlay__context" style={{ fontSize: "0.85rem", color: "var(--accent-gold)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "20px" }}>
+              {activeRoll.context || "rolls dice"}
+            </div>
+            
+            <div className="dice-overlay__scene" style={{ height: "120px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
+              <div className={`dice-overlay__die dice-overlay__die--${activeRoll.dice_type}`} style={{
+                width: "80px",
+                height: "80px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "linear-gradient(135deg, #8b0000, #4a0000)",
+                border: "2px solid var(--accent-gold)",
+                borderRadius: "50%",
+                color: "#fff",
+                fontSize: "2rem",
+                fontWeight: "bold",
+                boxShadow: "0 8px 16px rgba(0,0,0,0.6)",
+                textShadow: "0 2px 4px rgba(0,0,0,0.8)"
+              }}>
+                <span className="dice-overlay__number">
+                  {activeRoll.raw}
+                </span>
+              </div>
+            </div>
+
+            <div className="dice-overlay__result">
+              <span className="dice-overlay__formula" style={{ fontSize: "0.9rem", color: "var(--text-dim)" }}>
+                {activeRoll.raw}
+                {activeRoll.modifier !== 0 && (
+                  <span className="dice-overlay__mod">
+                    {activeRoll.modifier >= 0 ? ` +${activeRoll.modifier}` : ` ${activeRoll.modifier}`}
+                  </span>
+                )}
+              </span>
+              <div className="dice-overlay__total" style={{ fontSize: "3rem", fontWeight: "bold", color: "var(--accent-gold)", fontFamily: "var(--font-cinzel)", marginTop: "4px" }}>
+                {activeRoll.final}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

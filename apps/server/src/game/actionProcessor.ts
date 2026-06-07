@@ -1,6 +1,9 @@
 import { Pool, PoolClient } from "pg";
+import { pool } from "../db/client";
 import { ServerMessageMap } from "@dnd/shared";
 import { runWorldHeartbeat } from "./nemesisEngine";
+import { dmService } from "../ai/dmService";
+import { buildCampaignSnapshot, getLocationContext } from "../ai/contextBuilder";
 
 type ActionType = "exploration" | "skill_check" | "npc_interaction" | "other";
 
@@ -66,6 +69,18 @@ async function processSkillCheckAction(
     "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'skill_check', $2, $3) RETURNING id, created_at",
     [participant.campaignId, participant.characterId, JSON.stringify(payload)]
   );
+
+  if (dmService.isEnabled() && logRes.rows[0].id) {
+    const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
+    dmService.enqueueSkillCheck(pool, logRes.rows[0].id, participant.campaignId, {
+      party: snapshot.party,
+      location: snapshot.location ?? { name: "unknown", description: "" },
+      characterName: characterName,
+      skill: chosenSkill,
+      success: finalValue >= 10,
+      context: actionText,
+    });
+  }
 
   return {
     event: {
@@ -155,6 +170,18 @@ async function processMovementAction(
     "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'exploration', $2, $3) RETURNING id, created_at",
     [participant.campaignId, participant.characterId, JSON.stringify(payload)]
   );
+
+  if (dmService.isEnabled() && logRes.rows[0].id) {
+    const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
+    const previousLocation = await getLocationContext(client, currentLocation.id);
+    dmService.enqueueMovement(pool, logRes.rows[0].id, participant.campaignId, {
+      party: snapshot.party,
+      fromLocation: previousLocation ?? { name: "unknown", description: "" },
+      toLocation: snapshot.location ?? { name: "unknown", description: "" },
+      npcs: snapshot.npcs,
+      recentEvents: snapshot.recentEvents,
+    });
+  }
 
   return {
     event: {
@@ -264,6 +291,20 @@ export async function processPlayerAction(
     );
     await runWorldHeartbeat(client, participant.campaignId, isRestAction);
     await client.query("COMMIT");
+
+    if (dmService.isEnabled() && logRes.rows[0].id) {
+      const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
+      dmService.enqueueAction(pool, logRes.rows[0].id, participant.campaignId, {
+        party: snapshot.party,
+        location: snapshot.location ?? { name: "unknown", description: "" },
+        npcs: snapshot.npcs,
+        quests: snapshot.quests,
+        recentEvents: snapshot.recentEvents,
+        actorName: characterName,
+        actionDescription: text ?? "took an action",
+        serverResult: "resolved by server",
+      });
+    }
 
     return {
       event: {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Character, Campaign, ServerWSMessage, ServerMessageType, ServerMessageMap, CombatEncounter } from "@dnd/shared";
+import type { Character, Campaign, ServerWSMessage, ServerMessageType, ServerMessageMap, CombatEncounter, Location } from "@dnd/shared";
 
 
 export interface LobbyCampaign extends Campaign {
@@ -16,7 +16,7 @@ export interface SystemEvent {
 }
 
 type GameEvent = ServerMessageMap["GAME_EVENT"];
-export type GameOrSystemEvent = GameEvent | SystemEvent;
+export type GameOrSystemEvent = (GameEvent | SystemEvent) & { ai_narration?: string | null };
 
 export type WsStatus = "disconnected" | "connecting" | "connected";
 
@@ -30,6 +30,9 @@ interface GameState {
   activeCombat: CombatEncounter | null;
   ws: WebSocket | null;
   wsStatus: WsStatus;
+  locations: Location[];
+  activeRoll: ServerMessageMap["DICE_RESULT"] | null;
+  rollQueue: ServerMessageMap["DICE_RESULT"][];
 
   setCampaigns: (campaigns: LobbyCampaign[]) => void;
   setActiveCampaign: (campaign: LobbyCampaign | null, role: "player" | "dm" | null) => void;
@@ -40,6 +43,9 @@ interface GameState {
   setActiveCombat: (combat: CombatEncounter | null) => void;
   setWs: (ws: WebSocket | null) => void;
   setWsStatus: (status: WsStatus) => void;
+  setLocations: (locations: Location[]) => void;
+  enqueueRoll: (roll: ServerMessageMap["DICE_RESULT"]) => void;
+  dismissActiveRoll: () => void;
   handleWsMessage: (message: ServerWSMessage<ServerMessageType>, userId: string, fetchParty: (id: string) => void) => void;
   reset: () => void;
 }
@@ -54,6 +60,9 @@ const initialState = {
   activeCombat: null as CombatEncounter | null,
   ws: null as WebSocket | null,
   wsStatus: "disconnected" as WsStatus,
+  locations: [] as Location[],
+  activeRoll: null as ServerMessageMap["DICE_RESULT"] | null,
+  rollQueue: [] as ServerMessageMap["DICE_RESULT"][],
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -77,6 +86,25 @@ export const useGameStore = create<GameState>((set, get) => ({
   setWs: (ws) => set({ ws }),
 
   setWsStatus: (status) => set({ wsStatus: status }),
+
+  setLocations: (locations) => set({ locations }),
+
+  enqueueRoll: (roll) => set((state) => {
+    if (state.activeRoll) {
+      return { rollQueue: [...state.rollQueue, roll] };
+    } else {
+      return { activeRoll: roll };
+    }
+  }),
+
+  dismissActiveRoll: () => set((state) => {
+    const nextRoll = state.rollQueue[0] || null;
+    const nextQueue = state.rollQueue.slice(1);
+    return {
+      activeRoll: nextRoll,
+      rollQueue: nextQueue,
+    };
+  }),
 
   handleWsMessage: (message, userId, fetchParty) => {
     const { activeCampaign, appendEvent } = get();
@@ -111,7 +139,19 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
         break;
       }
-      case "GAME_EVENT": {
+      case "AI_NARRATION": {
+        const payload = message.payload as ServerMessageMap["AI_NARRATION"];
+        set((state) => ({
+          eventLogs: state.eventLogs.map((evt) =>
+            evt.id === payload.event_id
+              ? { ...evt, ai_narration: payload.text }
+              : evt
+          ),
+        }));
+        break;
+      }
+
+        case "GAME_EVENT": {
         const gameEvent = message.payload as GameEvent;
         appendEvent(gameEvent);
         break;
@@ -122,8 +162,35 @@ export const useGameStore = create<GameState>((set, get) => ({
         fetchParty(activeCampaign.id);
         break;
       }
-      case "DICE_RESULT":
+      case "WORLD_UPDATE": {
+        const payload = message.payload as ServerMessageMap["WORLD_UPDATE"];
+        const campaign = get().activeCampaign;
+        if (campaign) {
+          const nextWorldState = {
+            ...campaign.world_state,
+            ...payload.changes,
+          };
+          set({
+            activeCampaign: {
+              ...campaign,
+              world_state: nextWorldState,
+            },
+          });
+        }
+        appendEvent({
+          id: Math.random().toString(),
+          type: "system",
+          payload: { text: `${payload.actor_name || "Someone"} traveled from ${payload.from_location || "Unknown"} to ${payload.to_location || "Unknown"}.` },
+          timestamp: new Date().toISOString(),
+        });
+        fetchParty(activeCampaign.id);
         break;
+      }
+      case "DICE_RESULT": {
+        const payload = message.payload as ServerMessageMap["DICE_RESULT"];
+        get().enqueueRoll(payload);
+        break;
+      }
       case "ERROR": {
         const errorPayload = message.payload as { code: string; message: string };
         appendEvent({

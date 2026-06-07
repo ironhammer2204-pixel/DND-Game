@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
-import { RACES, CLASSES, SKILLS } from "@dnd/shared";
+import { RACES, CLASSES, SKILLS, SKILL_TO_ATTRIBUTE } from "@dnd/shared";
 import { pool } from "../db/client";
 
 const router = Router();
@@ -450,6 +450,132 @@ router.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Respon
   } catch (error) {
     console.error("Get character error:", error);
     res.status(500).json({ error: "Internal server error fetching character" });
+  }
+});
+
+// POST /api/characters/:id/allocate-stats - Allocate ability score points (ASI)
+router.post("/:id/allocate-stats", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const characterId = req.params.id;
+  const userId = req.user?.sub;
+  const { attributes: newAttributes } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!newAttributes || typeof newAttributes !== "object") {
+    return res.status(400).json({ error: "Missing or invalid attributes in request body" });
+  }
+
+  try {
+    const character = await verifyCharacterAccess(characterId, userId);
+    if (!character) {
+      return res.status(403).json({ error: "Forbidden: You cannot modify this character" });
+    }
+
+    if (!character.is_alive) {
+      return res.status(400).json({ error: "Cannot allocate stats for a deceased character" });
+    }
+
+    // 1. Check if campaign has active combat
+    const combatCheck = await pool.query(
+      "SELECT id FROM public.combat_encounters WHERE campaign_id = $1 AND status = 'active' LIMIT 1",
+      [character.campaign_id]
+    );
+    if (combatCheck.rows.length > 0) {
+      return res.status(400).json({ error: "Cannot allocate stats while campaign is in active combat" });
+    }
+
+    // 2. Fetch class starting stats
+    const defaults = CLASS_STARTING_STATS[character.class];
+    if (!defaults) {
+      return res.status(500).json({ error: "Starting stats config not found for character class" });
+    }
+
+    const startingClassStats = defaults.attributes;
+    const startingClassStatsSum = Object.values(startingClassStats).reduce((s, v) => s + v, 0);
+
+    const currentAttributes = character.attributes as Record<string, number>;
+    const currentAttributesSum = Object.values(currentAttributes).reduce((s: number, v: number) => s + v, 0);
+
+    const level = character.level;
+    const allowedTotalPoints = startingClassStatsSum + 2 * (level - 1);
+    const availablePoints = allowedTotalPoints - currentAttributesSum;
+
+    // 3. Validate new attributes format and values
+    const attrs = ["str", "dex", "con", "int", "wis", "cha"];
+    let newSum = 0;
+    for (const attr of attrs) {
+      const val = newAttributes[attr];
+      if (typeof val !== "number" || !Number.isInteger(val)) {
+        return res.status(400).json({ error: `Attribute '${attr}' must be an integer` });
+      }
+      if (val < currentAttributes[attr]) {
+        return res.status(400).json({ error: `Attribute '${attr}' cannot be decreased below current value (${currentAttributes[attr]})` });
+      }
+      if (val > 20) {
+        return res.status(400).json({ error: `Attribute '${attr}' cannot exceed the maximum cap of 20` });
+      }
+      newSum += val;
+    }
+
+    const change = newSum - currentAttributesSum;
+    if (change < 0) {
+      return res.status(400).json({ error: "Invalid allocation: total stats cannot decrease" });
+    }
+    if (change > availablePoints) {
+      return res.status(400).json({ error: `Insufficient stat points available. Requested increase of ${change} but only ${availablePoints} available.` });
+    }
+
+    // 4. Recompute all 18 skill modifiers
+    const updatedSkills: Record<string, number> = {};
+    for (const skill of SKILLS) {
+      const assocAttr = SKILL_TO_ATTRIBUTE[skill];
+      const attrVal = newAttributes[assocAttr];
+      updatedSkills[skill] = Math.floor((attrVal - 10) / 2);
+    }
+
+    // 5. Update database and log event
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query("BEGIN");
+
+      const updateRes = await dbClient.query(
+        `UPDATE public.characters 
+         SET attributes = $1, skills = $2, updated_at = now()
+         WHERE id = $3 
+         RETURNING *`,
+        [JSON.stringify(newAttributes), JSON.stringify(updatedSkills), characterId]
+      );
+
+      const updatedCharacter = updateRes.rows[0];
+
+      // Log system event
+      const logPayload = {
+        action_type: "stat_allocation",
+        actor_name: character.name,
+        text: `${character.name} allocated ability scores: STR ${newAttributes.str}, DEX ${newAttributes.dex}, CON ${newAttributes.con}, INT ${newAttributes.int}, WIS ${newAttributes.wis}, CHA ${newAttributes.cha}.`,
+      };
+      await dbClient.query(
+        "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'system', $2, $3)",
+        [character.campaign_id, characterId, JSON.stringify(logPayload)]
+      );
+
+      await dbClient.query("COMMIT");
+
+      res.json({
+        message: "Stats allocated successfully",
+        character: updatedCharacter,
+      });
+    } catch (err) {
+      await dbClient.query("ROLLBACK");
+      throw err;
+    } finally {
+      dbClient.release();
+    }
+  } catch (error) {
+    console.error("Allocate stats error:", error);
+    res.status(500).json({ error: "Internal server error allocating stats" });
   }
 });
 

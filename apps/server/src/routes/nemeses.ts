@@ -37,7 +37,7 @@ async function isCampaignDM(userId: string, campaignId: string): Promise<boolean
 // Returns full nemesis roster. Accessible to all campaign members.
 router.get("/:campaignId/nemeses", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -84,7 +84,7 @@ router.get("/:campaignId/nemeses", authMiddleware, async (req: AuthenticatedRequ
 // Returns a single nemesis with full history and linked quests.
 router.get("/:campaignId/nemeses/:nemesisId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -124,7 +124,7 @@ router.get("/:campaignId/nemeses/:nemesisId", authMiddleware, async (req: Authen
 // DM manually promotes an enemy NPC/monster to nemesis.
 router.post("/:campaignId/nemeses/promote", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { name, source_monster_id, tier = "soldier", target_character_id, reason = "dm_promotion" } = req.body as {
     name?: string;
     source_monster_id?: string;
@@ -188,7 +188,7 @@ router.post("/:campaignId/nemeses/promote", authMiddleware, async (req: Authenti
 // DM changes nemesis status (retire, reactivate, mark dead, etc.)
 router.patch("/:campaignId/nemeses/:nemesisId/status", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { status, note } = req.body as { status: NemesisStatus; note?: string };
 
   const VALID_STATUSES: NemesisStatus[] = ["active", "dead", "retired", "missing", "ambushing"];
@@ -242,7 +242,7 @@ router.patch("/:campaignId/nemeses/:nemesisId/status", authMiddleware, async (re
 // DM adds a manual story note to nemesis history.
 router.post("/:campaignId/nemeses/:nemesisId/history", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { summary, event_type = "dm_note", mechanical_data } = req.body as {
     summary: string;
     event_type?: string;
@@ -278,7 +278,7 @@ router.post("/:campaignId/nemeses/:nemesisId/history", authMiddleware, async (re
 // DM manually assigns a tier (up or down).
 router.patch("/:campaignId/nemeses/:nemesisId/tier", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { tier } = req.body as { tier: NemesisTier };
 
   try {
@@ -334,7 +334,7 @@ router.patch("/:campaignId/nemeses/:nemesisId/tier", authMiddleware, async (req:
 // DM assigns a specific successor nemesis.
 router.post("/:campaignId/nemeses/:nemesisId/successor", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { successor_nemesis_id } = req.body as { successor_nemesis_id: string };
 
   try {
@@ -394,7 +394,7 @@ router.post("/:campaignId/nemeses/:nemesisId/successor", authMiddleware, async (
 // DM manually triggers an ambush for a nemesis.
 router.post("/:campaignId/nemeses/:nemesisId/ambush", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignDM(userId, campaignId))) {
@@ -419,7 +419,7 @@ router.post("/:campaignId/nemeses/:nemesisId/ambush", authMiddleware, async (req
 // Returns all factions for a campaign with their nemeses.
 router.get("/:campaignId/factions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -460,7 +460,7 @@ router.get("/:campaignId/factions", authMiddleware, async (req: AuthenticatedReq
 // DM creates a new faction.
 router.post("/:campaignId/factions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { name, disposition = "hostile", power_level = 1, description } = req.body as {
     name: string;
     disposition?: "hostile" | "neutral" | "rival" | "allied";
@@ -498,7 +498,7 @@ router.post("/:campaignId/factions", authMiddleware, async (req: AuthenticatedRe
 // DM assigns a nemesis to a faction.
 router.patch("/:campaignId/nemeses/:nemesisId/faction", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, nemesisId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { faction_id } = req.body as { faction_id: string | null };
 
   try {

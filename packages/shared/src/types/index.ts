@@ -292,7 +292,8 @@ export type ClientMessageType =
   | "RECONNECT"
   | "COMBAT_ACTION"
   | "START_COMBAT"
-  | "DEATH_SAVE_ROLL";
+  | "DEATH_SAVE_ROLL"
+  | "UPDATE_CONDITIONS";
 
 export interface ClientMessageMap {
   ACTION_SUBMIT: {
@@ -323,6 +324,11 @@ export interface ClientMessageMap {
     monsters: { id: string; count: number }[];
   };
   DEATH_SAVE_ROLL: Record<string, never>;
+  UPDATE_CONDITIONS: {
+    participant_id: string;
+    condition: "poisoned" | "stunned" | "paralysed" | "dodging";
+    action: "add" | "remove";
+  };
 }
 
 export type ServerMessageType =

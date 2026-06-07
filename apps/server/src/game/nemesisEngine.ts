@@ -2,6 +2,8 @@ import { Pool, PoolClient } from "pg";
 import { CombatEncounter, CombatParticipant, Nemesis, NemesisHistoryEntry, NemesisPersonality, NemesisTier } from "@dnd/shared";
 import { MONSTERS } from "@dnd/shared";
 import { RoomManager } from "../websocket/roomManager";
+import { dmService } from "../ai/dmService";
+import { buildCampaignSnapshot } from "../ai/contextBuilder";
 import {
   EPITHETS,
   PERSONALITY_PRESETS,
@@ -85,7 +87,7 @@ function buildStats(enemy: CombatParticipant, tier: NemesisTier) {
   };
 }
 
-export async function getNemesisById(client: PoolClient | Pool, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
+export async function getNemesisById(client: any, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
   const res = await client.query(
     `SELECT n.*, f.name AS faction_name, l.name AS location_name, c.name AS target_character_name
      FROM public.nemeses n
@@ -99,7 +101,7 @@ export async function getNemesisById(client: PoolClient | Pool, campaignId: stri
 }
 
 export async function recordNemesisHistory(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   nemesisId: string,
   input: HistoryInput
@@ -123,7 +125,7 @@ export async function recordNemesisHistory(
 }
 
 export async function promoteEnemyToNemesis(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   enemy: CombatParticipant,
   context: PromotionContext
@@ -207,7 +209,7 @@ export async function promoteEnemyToNemesis(
 }
 
 export async function levelNemesisAfterEncounter(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   nemesisId: string,
   xpGain: number
@@ -263,7 +265,7 @@ export async function levelNemesisAfterEncounter(
 }
 
 export async function applyNemesisScar(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   nemesisId: string,
   seed: string
@@ -379,7 +381,7 @@ export async function evaluateCombatForNemesisPromotion(client: PoolClient, enco
   RoomManager.broadcastToRoom(encounter.campaign_id, "NEMESIS_UPDATE", { nemesis, history_entry: history, reason: "promoted" });
 }
 
-export async function triggerNemesisAmbush(client: PoolClient | Pool, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
+export async function triggerNemesisAmbush(client: any, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
   const res = await client.query(
     "UPDATE public.nemeses SET status = 'ambushing', last_seen_at = now() WHERE id = $1 AND campaign_id = $2 RETURNING *",
     [nemesisId, campaignId]
@@ -400,7 +402,7 @@ export async function triggerNemesisAmbush(client: PoolClient | Pool, campaignId
 }
 
 export async function assignSuccessor(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   deadNemesisId: string
 ): Promise<Nemesis | null> {
@@ -511,7 +513,7 @@ export function coordinateNemesisMinions(
 }
 
 export async function handleNemesisQuestIntegration(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   nemesis: Nemesis,
   eventType: "promoted" | "killed" | "tiered_up" | "successor",
@@ -695,7 +697,7 @@ export async function handleNemesisQuestIntegration(
 }
 
 export async function runWorldHeartbeat(
-  client: PoolClient | Pool,
+  client: any,
   campaignId: string,
   isRestAction: boolean
 ): Promise<void> {
@@ -732,18 +734,29 @@ export async function runWorldHeartbeat(
               text: `AMBUSH! While resting at ${locName}, the party is suddenly ambushed by ${nemesis.name} ${nemesis.epithet || ""}!`,
               nemesis_id: nemesis.id,
             };
-            await client.query(
-              "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'exploration', $2)",
+            const logRes = await client.query(
+              "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'exploration', $2) RETURNING id, created_at",
               [campaignId, JSON.stringify(payload)]
             );
             
             RoomManager.broadcastToRoom(campaignId, "GAME_EVENT", {
-              id: `ambush-${Date.now()}`,
+              id: logRes.rows[0].id,
               type: "exploration",
               actor_name: nemesis.name,
               payload,
-              timestamp: new Date().toISOString()
+              timestamp: logRes.rows[0].created_at
             });
+
+            if (dmService.isEnabled() && logRes.rows[0].id) {
+              const snapshot = await buildCampaignSnapshot(client, campaignId);
+              if (snapshot.nemesis && snapshot.location) {
+                dmService.enqueueNemesisAmbush(client, logRes.rows[0].id, campaignId, {
+                  party: snapshot.party,
+                  location: snapshot.location,
+                  nemesis: snapshot.nemesis,
+                });
+              }
+            }
           }
         }
       }
@@ -781,7 +794,7 @@ export async function runWorldHeartbeat(
     }
 
     for (const [nemesisId, targetLocId] of Object.entries(movedNemeses)) {
-      const nemesis = nemeses.find(n => n.id === nemesisId)!;
+      const nemesis = nemeses.find((n: Nemesis) => n.id === nemesisId)!;
       
       await client.query(
         "UPDATE public.nemeses SET location_id = $1, last_seen_at = now() WHERE id = $2",
@@ -818,7 +831,7 @@ export async function runWorldHeartbeat(
       }
 
       if (nemesis.faction_id) {
-        const factionMembers = nemeses.filter(n => n.faction_id === nemesis.faction_id && n.id !== nemesis.id && n.location_id);
+        const factionMembers = nemeses.filter((n: Nemesis) => n.faction_id === nemesis.faction_id && n.id !== nemesis.id && n.location_id);
         for (const member of factionMembers) {
           const memberLocRes = await client.query("SELECT connected_locations FROM public.locations WHERE id = $1", [member.location_id]);
           const memberConnections: string[] = memberLocRes.rows[0]?.connected_locations || [];
