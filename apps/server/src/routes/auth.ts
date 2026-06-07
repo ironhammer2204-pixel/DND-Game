@@ -23,6 +23,31 @@ function authErrorStatus(message: string, fallback: number): number {
   return fallback;
 }
 
+function getTrustedFrontendOrigin(req: { query: Record<string, unknown>; headers: Record<string, unknown> }): string {
+  const configuredOrigin = process.env.FRONTEND_URL || process.env.CLIENT_ORIGIN;
+  const requested = typeof req.query.redirect_to === "string" ? req.query.redirect_to : "";
+  const headerOrigin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  const candidates = [requested, headerOrigin, configuredOrigin].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        if (configuredOrigin) {
+          const allowed = new URL(configuredOrigin);
+          if (url.origin === allowed.origin) return url.origin;
+        } else {
+          return url.origin;
+        }
+      }
+    } catch {
+      // Ignore invalid URLs and try the next candidate.
+    }
+  }
+
+  return configuredOrigin || "http://localhost:5173";
+}
+
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
   const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
@@ -146,10 +171,11 @@ router.post("/logout", async (req, res) => {
 // GET /api/auth/google
 router.get("/google", async (req, res) => {
   try {
+    const redirectTo = `${getTrustedFrontendOrigin(req)}/auth/callback`;
     const { data, error } = await supabaseAuth.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${req.headers.origin || "http://localhost:5173"}/auth/callback`,
+        redirectTo,
       },
     });
 

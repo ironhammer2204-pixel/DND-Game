@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../stores/authStore";
-import { API_URL } from "../config";
+import { resolveApiUrl } from "../config";
 
 export function AuthCallback() {
   const { setSession } = useAuthStore();
@@ -21,8 +21,9 @@ export function AuthCallback() {
       }
 
       try {
+        const apiUrl = await resolveApiUrl();
         // Fetch the user profile from our backend
-        const res = await fetch(`${API_URL}/api/auth/me`, {
+        const res = await fetch(`${apiUrl}/api/auth/me`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "ngrok-skip-browser-warning": "true",

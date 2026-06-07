@@ -1,1281 +1,199 @@
-# brain.md — AI Multiplayer D&D Game: Final Draft Plan
+# brain.md - DND Game Source of Truth
 
-> Zero-cost stack. No local models. No credit card required. Built for a private friend group of up to 10 players.
-
----
+> Private multiplayer D&D game for a friend group. The server is authoritative. AI narrates, but it never decides game state.
 
 ## Current Status
 
-Last updated: 2026-06-08 (Faction Pressure System Complete)
+Last updated: 2026-06-08
 
 - GitHub repo: `https://github.com/ironhammer2204-pixel/DND-Game`
-- Supabase project: `fvgpsqksclhyvaeveaus` (`DND-Game`)
-- `brain.md` is now the project source of truth and must be updated after every meaningful fix, feature, schema change, setup change, or architecture decision.
-- Initial remote migration `20260607123000_initial_game_schema.sql` has been pushed successfully.
-- Faction Pressure System migration `20260608000000_faction_pressure_system.sql` has been applied successfully.
-- Database baseline includes all core tables, indexes, triggers, RLS enabled on all tables, and RLS policies.
-- Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
-- **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested.
-- **Phase 2 (Game systems): FULLY COMPLETE** — location UI, gold transaction ledger, and level-up logic implemented.
-- **Phase 3 (AI + Combat + Living World): FULLY COMPLETE** — Combat loop, Nemesis grudge promotion, Faction Pressure System, conditions system, NPC seeding, death saves, Groq AI narration pipeline, behaviour tagging, and heartbeat checks are fully built and integrated.
-- **Phase 4 (Polish): PENDING** — Sound effects, UI polish, production deploy.
+- Supabase project: `fvgpsqksclhyvaeveaus`
+- `brain.md` must be updated after every meaningful fix, feature, schema change, setup change, or architecture decision.
+- The app is a live web game, not a wireframe. Auth, lobby, campaign join/create, game room flow, dice, combat, inventory, quests, world travel, encyclopedia, balance dashboard, faction control, nemesis system, and reconnect support are all present in code.
+- Phase 1, Phase 2, and Phase 3 are implemented in code.
+- Phase 4 is the remaining polish, deployment hardening, and UX refinement pass.
+- Auth now has a more resilient API base resolver on the client, and Google OAuth uses an explicit redirect target instead of guessing localhost.
 
----
+## Product Snapshot
+
+The current user-facing surfaces are:
+
+- Auth page
+- OAuth callback handling
+- Lobby with campaign cards, create campaign, and invite-code join
+- Main game shell for players
+- DM-facing control surfaces for world state, balance, factions, encyclopedia, and nemeses
+- Reconnect banner and websocket recovery flow
+- Chat, narration, event log, dice panel, inventory, quest log, world travel, and character inspector
 
 ## Stack
 
 | Layer | Technology | Provider | Cost |
 |---|---|---|---|
-| Frontend | React + TypeScript + Tailwind CSS + Vite | Vercel (free) | $0 |
-| Backend | Node.js + Express | Render.com (free, 750 hrs/mo) | $0 |
-| Database | PostgreSQL | Supabase (free, 500MB) | $0 |
+| Frontend | React + TypeScript + Vite | Vercel | $0 |
+| Backend | Node.js + Express | Render | $0 |
+| Database | PostgreSQL | Supabase | $0 |
 | Auth | Supabase Auth + JWT | Supabase | $0 |
-| Realtime | WebSockets (ws library) + Supabase Realtime | Supabase | $0 |
-| AI Dungeon Master | Llama 3.3 70B via Groq API | Groq (free tier) | $0 |
-| Monorepo | Turborepo | — | $0 |
-| **Total** | | | **$0/mo** |
-
-### Free tier caveats
-
-- **Render**: server sleeps after 15 min idle, ~30s cold start. For scheduled sessions this is irrelevant.
-- **Supabase**: project pauses after 7 days of zero requests. One-click restore.
-- **Groq**: 14,400 requests/day, 30 req/min. At 2 sessions/week with 10 players (~100 narration calls/session) you use ~2% of the daily limit.
-
----
+| Realtime | WebSockets + Supabase support where needed | Render / Supabase | $0 |
+| AI Dungeon Master | Groq-powered narration | Groq | $0 |
+| Monorepo | Turborepo | - | $0 |
 
 ## Core Principle
 
-> **The AI is never the source of truth.**
-
-The server is authoritative for all game state. The AI narrates outcomes — it never produces them.
+The AI is not the source of truth.
 
 | AI can | AI cannot |
 |---|---|
-| Narrate events | Modify player stats |
-| Describe locations | Modify inventories or gold |
-| Roleplay NPCs | Modify quest state |
-| Generate dialogue | Generate or modify dice rolls |
-| Suggest story developments | Modify combat outcomes |
-| Create atmosphere | Write to the database (ever) |
-
-## Core design principles
-
-### The hierarchy (never violate this)
-WORLD ENGINE (server, deterministic rules)
-↓  produces structured DB rows
-DATABASE (source of truth)
-↓  read-only snapshot
-AI DM SERVICE (narrates only, never decides)
-↓  display text only
-CLIENTS
-
-### No human DM — ever
-There is no DM player role. World expansion is fully server-driven.
-New locations, NPCs, and quests are instantiated by the World Engine from
-authored templates when deterministic trigger conditions are met.
-The AI describes what the server decided. It never decides anything itself.
-
-### Consequence over content
-The authored pool is starting conditions, not the game.
-Players generate the actual story through behaviour.
-The world reacts to pattern, not to specific scripted events.
-You cannot write a walkthrough for this game because the walkthrough is the players.
-
----
+| Narrate outcomes | Change player stats directly |
+| Describe scenes | Change inventories or gold directly |
+| Roleplay NPCs | Decide combat results |
+| Suggest story beats | Write authoritative state without the server |
 
 ## Architecture
 
+```text
+CLIENTS (React + TypeScript)
+  -> HTTP + WebSocket
+EXPRESS API SERVER
+  -> Auth middleware, routes, room management, game logic
+GAME SYSTEMS
+  -> Dice engine, combat engine, world engine, faction engine, nemesis engine, encyclopedia engine, balancing engine
+DATA + AI
+  -> PostgreSQL source of truth
+  -> Supabase Auth for login/session verification
+  -> Groq narration pipeline for DM text only
 ```
-┌─────────────────────────────────────────────────────┐
-│           CLIENT — React + TypeScript                │
-│  GameView · CharSheet · Inventory · QuestLog         │
-│  Chat · DicePanel · CombatUI · AI Narration Window  │
-└────────────────┬────────────────────────────────────┘
-                 │ HTTP + WebSocket
-┌────────────────▼────────────────────────────────────┐
-│         EXPRESS API GATEWAY (Render.com)             │
-│         Auth middleware · Route dispatch             │
-└────────────────┬────────────────────────────────────┘
-                 │
-┌────────────────▼────────────────────────────────────┐
-│         GAME SERVER — Node.js (authoritative)        │
-│  ActionProcessor · DiceEngine · CombatEngine         │
-│  QuestManager · WorldEngine · WS RoomManager         │
-└──────┬──────────────────┬──────────────────┬────────┘
-       │                  │                  │
-┌──────▼──────┐  ┌────────▼──────┐  ┌───────▼───────┐
-│ PostgreSQL  │  │  AI DM svc    │  │  WS Realtime  │
-│ (Supabase) │  │  (Groq API)   │  │  (Supabase)   │
-│             │  │  read-only    │  │               │
-│  Source of  │  │  context only │  │  10-player    │
-│  truth      │  │  narrates     │  │  rooms        │
-└─────────────┘  └───────────────┘  └───────────────┘
-```
-
-**Order of operations for every game action:**
-1. Client submits action (text or structured)
-2. Server validates action against DB state
-3. Server calculates outcome (dice, combat math, quest check)
-4. Server writes result to DB
-5. Server broadcasts `GAME_EVENT` to all players via WebSocket
-6. Server enqueues async narration job → Groq API
-7. AI narration arrives and is broadcast as display-only text
-
----
 
 ## Folder Structure
 
-```
-dnd-game/
-┐œ── apps/
-│   ┐œ── web/                          # React + Vite frontend (Single-file client shell in early phases)
+```text
+DNDGame/
+├── apps/
+│   ├── web/
 │   │   └── src/
-│   │       ┐œ── assets/               # Static assets
-│   │       ┐œ── App.css               # Component specific styling
-│   │       ┐œ── App.tsx               # Main frontend codebase (All-in-one lobby/game shell)
-│   │       ┐œ── config.ts             # Client environment configuration
-│   │       ┐œ── index.css             # Main stylesheet & design system
-│   │       └── main.tsx              # Application entry point
-│   │
-│   └── server/                       # Node.js + Express backend
-│       └── src/
-│           ┐œ── db/
-│           │   ┐œ── client.ts         # pg pool → Supabase connection
-│           │   └── supabase.ts       # Supabase service client
-│           ┐œ── game/
-│           │   └── diceEngine.ts     # Cryptographically secure dice rolling utility
-│           ┐œ── middleware/
-│           │   └── auth.ts           # Bearer-token verification via Supabase getUser()
-│           ┐œ── routes/
-│           │   ┐œ── auth.ts           # Authentication REST endpoints
-│           │   ┐œ── campaigns.ts      # Campaign lobby & management REST endpoints
-│           │   └── characters.ts     # Character spawning REST endpoints
-│           ┐œ── websocket/
-│           │   ┐œ── roomManager.ts    # WS campaign connection tracking
-│           │   └── eventHandlers.ts  # WS message parsing & routing (calls diceEngine)
-│           └── index.ts              # Server entry point (HTTP + WebSockets)
-│
-┐œ── packages/
-│   └── shared/                       # Shared type definitions & constants
-│       └── src/
-│           ┐œ── constants/            # Game constants (races, classes, skills)
-│           ┐œ── types/                # TS Types (Character, Campaign, WS events)
-│           └── index.ts              # Entry exporter
-│
-└── brain.md                          # Source of truth project spec
-```
-
-#### Target Folder Structure (Refactoring/Modularization Plan)
-When the codebase is refactored in later phases, the folders will be modularized as follows:
-```
-dnd-game/
-┐œ── apps/
-│   ┐œ── web/
-│   │   └── src/
-│   │       ┐œ── components/           # Extracted UI components
-│   │       │   ┐œ── game/             # GameView, CombatInterface
-│   │       │   ┐œ── character/        # CharacterSheet, Inventory
-│   │       │   ┐œ── ui/               # Chat, DicePanel, QuestLog
-│   │       │   └── layout/           # Sidebar, HUD
-│   │       ┐œ── hooks/                # useWebSocket, useCharacter, useCombat
-│   │       ┐œ── stores/               # Zustand: gameStore, uiStore
-│   │       ┐œ── pages/                # Lobby, Campaign, CharCreate, Auth
-│   │       ┐œ── services/             # api.ts, ws.ts
-│   │       └── types/                # Shared TS types
-│   │
+│   │       ├── components/
+│   │       │   ├── BalanceDashboard.tsx
+│   │       │   ├── DicePanel.tsx
+│   │       │   ├── EncyclopediaPanel.tsx
+│   │       │   ├── FactionControlRoom.tsx
+│   │       │   ├── NemesisGallery.tsx
+│   │       │   └── WsReconnectBanner.tsx
+│   │       ├── pages/
+│   │       │   ├── AuthCallback.tsx
+│   │       │   ├── AuthPage.tsx
+│   │       │   ├── GamePage.tsx
+│   │       │   └── LobbyPage.tsx
+│   │       ├── stores/
+│   │       │   ├── authStore.ts
+│   │       │   └── gameStore.ts
+│   │       ├── App.tsx
+│   │       ├── App.css
+│   │       ├── config.ts
+│   │       ├── index.css
+│   │       └── main.tsx
 │   └── server/
 │       └── src/
-│           ┐œ── routes/
-│           │   ┐œ── auth.ts
-│           │   ┐œ── campaigns.ts
-│           │   ┐œ── characters.ts
-│           │   ┐œ── quests.ts
-│           │   └── world.ts
-│           ┐œ── websocket/
-│           │   ┐œ── roomManager.ts
-│           │   ┐œ── eventHandlers.ts
-│           │   └── events.ts
-│           ┐œ── game/
-│           │   ┐œ── actionProcessor.ts
-│           │   ┐œ── combatEngine.ts
-│           │   ┐œ── diceEngine.ts     # crypto.randomInt refactored logic
-│           │   ┐œ── questManager.ts
-│           │   └── worldEngine.ts
-│           ┐œ── ai/
-│           │   ┐œ── dmService.ts
-│           │   ┐œ── contextBuilder.ts
-│           │   └── promptTemplates.ts
-│           ┐œ── db/
-│           │   ┐œ── client.ts
-│           │   ┐œ── migrations/
-│           │   └── queries/
-│           └── middleware/
-│               ┐œ── auth.ts
-│               └── validate.ts
+│           ├── ai/
+│           ├── db/
+│           ├── game/
+│           ├── middleware/
+│           ├── routes/
+│           ├── websocket/
+│           └── index.ts
+├── packages/
+│   └── shared/
+│       └── src/
+│           ├── constants/
+│           ├── types/
+│           └── index.ts
+└── brain.md
 ```
 
----
-
-## Database Schema (12 tables)
-
-### `users`
-```sql
-id           uuid PRIMARY KEY DEFAULT gen_random_uuid()
-email        text UNIQUE NOT NULL
-username     text NOT NULL
-avatar_url   text
-created_at   timestamptz DEFAULT now()
-```
-
-### `campaigns`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-name          text NOT NULL
-invite_code   text UNIQUE NOT NULL
-owner_id      uuid REFERENCES users(id)
-world_state   jsonb DEFAULT '{}'
-session_count int DEFAULT 0
-created_at    timestamptz DEFAULT now()
-```
-
-### `characters`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-user_id       uuid REFERENCES users(id)
-campaign_id   uuid REFERENCES campaigns(id)
-name          text NOT NULL
-race          text NOT NULL
-level         int DEFAULT 1
-xp            int DEFAULT 0
-hp_current    int NOT NULL
-hp_max        int NOT NULL
-attributes    jsonb NOT NULL  -- { str, dex, con, int, wis, cha }
-skills        jsonb NOT NULL
-gold          int DEFAULT 0
-reputation    jsonb DEFAULT '{}'
-is_alive      bool DEFAULT true
-updated_at    timestamptz DEFAULT now()
-```
-
-### `character_classes` — Primary and Hidden Classes
-```sql
-id              uuid PRIMARY KEY DEFAULT gen_random_uuid()
-character_id    uuid REFERENCES characters(id) UNIQUE FOR PRIMARY
-class_type      text NOT NULL  -- 'primary' or 'hidden'
-class_name      text NOT NULL
-class_level     int DEFAULT 1
-unlocked_at     timestamptz    -- null for primary (created at character creation), set at unlock for hidden
-unlock_story    text           -- AI-generated unlock scene narration, stored for posterity
-variant         text           -- which variant of this hidden class (e.g. 'merciful_shadow_blade')
-created_at      timestamptz DEFAULT now()
-```
-
-### `character_behaviour_log` — Behaviour Tracking
-```sql
-id                uuid PRIMARY KEY DEFAULT gen_random_uuid()
-character_id      uuid REFERENCES characters(id)
-campaign_id       uuid REFERENCES campaigns(id)
-action_type       text NOT NULL  -- 'combat_kill', 'npc_spared', 'lie_told', 'secret_found', 'ally_abandoned', etc.
-tags              text[] NOT NULL -- ['shadow', 'mercy', 'deception', 'curiosity']
-weight            int DEFAULT 1   -- significance 1-5
-context           jsonb          -- what happened, when, where
-created_at        timestamptz DEFAULT now()
-```
-
-### `character_behaviour_profile` — Accumulated Behaviour Scores
-```sql
-character_id      uuid PRIMARY KEY REFERENCES characters(id)
-tag_scores        jsonb NOT NULL  -- { shadow: 47, mercy: 12, chaos: 31, ... }
-updated_at        timestamptz DEFAULT now()
-```
-
-### `character_class_unlocks` — Hidden Class Unlock Events
-```sql
-id                uuid PRIMARY KEY DEFAULT gen_random_uuid()
-character_id      uuid REFERENCES characters(id)
-hidden_class_id   text NOT NULL  -- references HIDDEN_CLASSES config
-unlock_trigger    text          -- 'npc_contact', 'dream_sequence', 'world_event'
-triggered_at      timestamptz
-accepted_at       timestamptz   -- null if player refused the unlock
-variant_selected  text          -- which variant was chosen (if applicable)
-narrative_scene   text          -- full AI-generated unlock narrative
-```
-
-### `inventory_items`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-character_id  uuid REFERENCES characters(id)
-item_id       uuid REFERENCES item_catalog(id)
-quantity      int DEFAULT 1
-is_equipped   bool DEFAULT false
-acquired_at   timestamptz DEFAULT now()
-```
-
-### `npcs`
-```sql
-id                uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id       uuid REFERENCES campaigns(id)
-name              text NOT NULL
-role              text
-location_id       uuid REFERENCES locations(id)
-is_alive          bool DEFAULT true
-relationship_map  jsonb DEFAULT '{}'   -- keyed by character_id
-known_info        jsonb DEFAULT '[]'
-memory_log        jsonb[] DEFAULT '{}'  -- array of interaction records
-base_stats        jsonb NOT NULL
-```
-
-### `quests`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id   uuid REFERENCES campaigns(id)
-type          text CHECK (type IN ('main', 'side', 'random'))
-title         text NOT NULL
-description   text
-status        text DEFAULT 'active' CHECK (status IN ('active','complete','failed'))
-objectives    jsonb[] NOT NULL   -- each: { text, completed: bool }
-rewards       jsonb DEFAULT '{}'
-giver_npc_id  uuid REFERENCES npcs(id)
-created_at    timestamptz DEFAULT now()
-completed_at  timestamptz
-```
-
-### `locations`
-```sql
-id                   uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id          uuid REFERENCES campaigns(id)
-name                 text NOT NULL
-type                 text   -- city, village, dungeon, wilderness
-description          text
-state                jsonb DEFAULT '{}'   -- { destroyed, discovered, controlled_by }
-connected_locations  uuid[]
-lore                 text
-```
-
-### `combat_encounters`
-```sql
-id                  uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id         uuid REFERENCES campaigns(id)
-status              text DEFAULT 'active' CHECK (status IN ('active','resolved'))
-turn_order          jsonb[] NOT NULL   -- ordered initiative list
-current_turn_index  int DEFAULT 0
-participants        jsonb[] NOT NULL   -- { id, type, hp_current, hp_max, conditions }
-round_number        int DEFAULT 1
-started_at          timestamptz DEFAULT now()
-```
-
-### `event_log`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id   uuid REFERENCES campaigns(id)
-type          text NOT NULL   -- combat, quest, chat, exploration, system
-actor_id      uuid            -- character_id or npc_id
-payload       jsonb NOT NULL  -- full structured event data
-ai_narration  text            -- stored DM response (display only)
-created_at    timestamptz DEFAULT now()
-```
-
-### `dice_rolls`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-character_id  uuid REFERENCES characters(id)
-campaign_id   uuid REFERENCES campaigns(id)
-dice_type     text NOT NULL   -- d4, d6, d8, d10, d12, d20, d100
-raw_value     int NOT NULL
-modifier      int DEFAULT 0
-final_value   int NOT NULL
-context       text            -- 'attack', 'damage', 'skill:perception', etc.
-rolled_at     timestamptz DEFAULT now()
-```
-
-### `item_catalog`
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-name          text NOT NULL
-type          text            -- weapon, armor, consumable, misc
-description   text
-stats         jsonb DEFAULT '{}'  -- { damage, ac_bonus, range, etc. }
-value_gp      int DEFAULT 0
-is_consumable bool DEFAULT false
-```
-
-### `campaign_members`
-```sql
-campaign_id   uuid REFERENCES campaigns(id)
-user_id       uuid REFERENCES users(id)
-character_id  uuid REFERENCES characters(id)
-role          text DEFAULT 'player' CHECK (role IN ('player', 'dm'))
-joined_at     timestamptz DEFAULT now()
-last_seen_at  timestamptz DEFAULT now()
-PRIMARY KEY (campaign_id, user_id)
-```
-
-### `nemeses` — The Nemesis System
-```sql
-id                    uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id           uuid REFERENCES campaigns(id)
-name                  text NOT NULL
-title                 text            -- "The Twice-Burned", "The Coward"
-base_enemy_type       text NOT NULL   -- goblin, bandit, orc, etc.
-level                 int DEFAULT 1
-target_character_id   uuid REFERENCES characters(id)  -- who they have beef with (can be null)
-history               jsonb[]         -- [ { event, result, session_date } ]
-is_alive              bool DEFAULT true
-personality           jsonb           -- { brutal, cowardly, cunning, honorable } — affects AI tactics
-promoted_from_npc_id  uuid            -- if null, auto-generated; if not null, was once a named enemy
-created_at            timestamptz DEFAULT now()
-```
-
-### `factions` — Faction Pressure System
-```sql
-id                   uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id          uuid REFERENCES campaigns(id)
-name                 text NOT NULL
-description          text
-power_level          int DEFAULT 50       -- 0-100; affects world pressure
-disposition_to_party int DEFAULT 0        -- -100 to +100; hostile to friendly
-goals                jsonb NOT NULL       -- { short_term, long_term, current_priority }
-controlled_locations uuid[] DEFAULT '{}'  -- location IDs this faction controls
-leader_npc_id        uuid REFERENCES npcs(id)
-created_at           timestamptz DEFAULT now()
-```
-
-### `faction_events` — Automated World Reactions
-```sql
-id                  uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id         uuid REFERENCES campaigns(id)
-faction_id          uuid REFERENCES factions(id)
-trigger_condition   jsonb           -- { power_threshold: 70, disposition: 'hostile' }
-action_type         text            -- 'seize_location','send_assassin','offer_contract','siege'
-payload             jsonb           -- action-specific data
-fired_at            timestamptz
-created_at          timestamptz DEFAULT now()
-```
-
-### `world_tick_log` — Simulation History
-```sql
-id            uuid PRIMARY KEY DEFAULT gen_random_uuid()
-campaign_id   uuid REFERENCES campaigns(id)
-tick_number   int NOT NULL
-changes       jsonb[]             -- [ { system, what_changed, why } ]
-created_at    timestamptz DEFAULT now()
-```
-
----
-
-## Living World System — Four Interlocking Engines
-
-> **Core principle:** Randomness is noise. Consequence, memory, and agency create immersion. The world doesn't react randomly—it reacts *specifically to what the party did.*
-
-### 1. The Nemesis System
-Every significant enemy becomes a named antagonist with history, personality, and a grudge.
-
-**Mechanics:**
-- When a named enemy survives combat, they're promoted (stats increase, level up)
-- If a player nearly killed them, they develop *a grudge against that specific player*
-- If a player fled from them, they mock that player by name: *"Running again, Thorin?"*
-- If killed, their lieutenant inherits the grudge and a vendetta
-- The AI receives their full history when they reappear: *"I remember the Thornwood. You left me for dead."*
-
-**What makes this work:** The server passes the nemesis's actual event log to the AI. Every line of dialogue is grounded in real history, not generation.
-
-### 2. Faction Pressure System
-Factions compete. They gain power by controlling locations and lose it when the party interferes. When power crosses thresholds, they *take action in the world.*
-
-**Mechanics:**
-- Every faction has power level (0–100) and disposition to party (-100 to +100)
-- Party helps faction A → A's power grows, rival factions lose ground
-- When faction A crosses power_level 70, a faction_event fires automatically: they seize a location, send an assassin, or offer a high-value contract
-- **Key:** This happens *between sessions.* Players log in to find the town they liberated is now under occupation. The world didn't wait for them.
-
-### 3. World Heartbeat — The Simulation Tick
-A scheduled job (runs once per session start, or daily in real time) simulates world advancement:
-
-- Factions gain/lose power based on goals and location control
-- Nemeses move between locations (hunting the party)
-- Quests ignored have consequences: the merchant they never rescued becomes a grieving widow in the town square
-- New rumours are generated from recent events and seeded into tavern NPCs
-- Locations under faction control change state
-
-**What makes this work:** It's not random. Every tick is deterministic logic: *If faction A controls location X and power > 60, they expand to adjacent location Y.* The *content* feels surprising because systems interact, but each rule is fair and predictable.
-
-### 4. NPC Agenda System — Upgrade to Memory
-Every significant NPC now has:
-
-- **Short-term goal** (find the warehouse thief)
-- **Long-term goal** (become guild master)
-- **Secret** (skimming guild funds — only revealed under specific conditions)
-- **Relationship web** ({ npc_id: { trust, fear, owes } })
-
-**Mechanics:**
-- Server tracks NPC progress on their goals
-- If party never helps the warehouse NPC, he investigates himself
-- He eventually levels a *false accusation* at a rival NPC
-- Party returns to town, discovers someone in the stocks for a crime they didn't commit
-- This world event emerges from NPC agency, not scripting
-
-**Upgrade to `npcs` table:**
-```sql
--- Add these columns to public.npcs:
-short_term_goal   text
-long_term_goal    text
-secret            text              -- conditions: only_if_trusted_rating_above_80, etc.
-agenda_state      jsonb             -- { current_goal_progress, attempts, failures }
-relationships     jsonb             -- { npc_id: { trust: 0-100, fear: 0-100, owes: text } }
-```
-
----
-
-## How These Systems Interact — A Concrete Scenario
-
-**Session 1:** Party defeats bandit leader, lets lieutenant escape.  
-→ World tick runs. Lieutenant (auto-promoted to Nemesis) reorganises faction. Bandit power ticks up. They seize a road.
-
-**Session 2:** Party arrives at town. Merchant NPC (who protects trade routes) is distressed—his shipments are raided. He offers a contract.  
-→ This quest wasn't scripted. Server generated it because faction control changed and the NPC's agenda reacted.  
-→ Mid-session: Nemesis ambushes party. He addresses the player who fled by name. AI generates dialogue from his history: *"You remember me, coward?"* He's stronger. He has a scar.
-
-**Session 3:** Party kills Nemesis. His lieutenant witnesses it and flees.  
-→ World tick runs. Bandit faction power collapses (too low). A rival faction moves into the power vacuum.  
-→ Same road, different faction. Neutral disposition instead of hostile. New political situation. New story.
-
-**Nobody wrote any of that.** It emerged from four systems with memory, goals, and consequences.
-
----
-
-## The Emergent Class System
-> **Core idea: A hidden class is a pattern of behaviour that the server recognises over time. The player never tries to unlock it. They just play — and the world responds to who they're becoming.**
-
-### Philosophy
-Standard D&D classes are chosen at character creation. This system inverts that: your *actions* accumulate into a **behavioural fingerprint**. When that fingerprint matches a hidden archetype, something shifts. An NPC finds you. A dream triggers. A door opens.
-
-You didn't choose to become it. You *became* it.
-
-Every meaningful action gets tagged with invisible **behaviour weights**. The player never sees these numbers. The server silently accumulates them. When thresholds are crossed, the world delivers an unlock event — always grounded in the character's actual history.
-
-### Behaviour Tagging
-Every significant action is tagged with behaviour vectors:
-
-- **Combat kill** → tag: `shadow`, weight: 3
-- **NPC spared** → tag: `mercy`, weight: 2
-- **Lie told** → tag: `deception`, weight: 2
-- **Secret discovered** → tag: `curiosity`, weight: 3
-- **Ally abandoned** → tag: `chaos`, weight: 4
-- **Forbidden knowledge sought** → tag: `forbidden`, weight: 3
-- **Deal made with entity** → tag: `forbidden`, weight: 5
-
-The tags accumulate in `character_behaviour_profile.tag_scores`. The player has no access to these numbers. Ever.
-
-### Hidden Class Definition — The Config
-You define 10–15 patterns before launch. Each is just a **threshold configuration** — no code changes needed:
-
-```typescript
-// src/config/hiddenClasses.ts
-export const HIDDEN_CLASSES = [
-  {
-    id: 'shadow_blade',
-    name: 'Shadow Blade',
-    unlock_conditions: {
-      tag_thresholds: { shadow: 40, deception: 30 },  // behavioural minimums
-      stat_requirements: { dex: 14 },
-      action_requirements: ['killed_sleeping_enemy', 'stolen_from_ally'],
-      level_minimum: 4
-    },
-    trigger: 'npc_contact',     // how unlock is delivered
-    variants: [
-      {
-        id: 'merciful_shadow',
-        condition: { mercy: 20 }  // secondary condition
-      },
-      {
-        id: 'cruel_shadow',
-        condition: { cruelty: 20 }
-      }
-    ]
-  },
-  {
-    id: 'oathbreaker',
-    name: 'Oath Breaker',
-    unlock_conditions: {
-      tag_thresholds: { betrayal: 50, chaos: 20 },
-      action_requirements: ['broke_sworn_quest', 'attacked_ally_in_combat'],
-      level_minimum: 3
-    },
-    trigger: 'dream_sequence'
-  },
-  {
-    id: 'void_touched',
-    name: 'Void-Touched',
-    unlock_conditions: {
-      tag_thresholds: { forbidden: 60, curiosity: 40 },
-      action_requirements: ['read_forbidden_tome', 'made_deal_with_entity'],
-      level_minimum: 5
-    },
-    trigger: 'world_event'
-  }
-  // Add more anytime without touching game logic
-]
-```
-
-You don't need to know what `shadow_blade` *feels like* to define it. You know who unlocks it. The AI writes the unlock scene. The story is emergent.
-
-### The Unlock Experience — Three Delivery Types
-
-**`npc_contact`** — A mysterious NPC seeks the character out  
-The AI narrates using the character's actual behaviour history. The NPC has been watching. *"I've heard about what you did in Thornwall. The way you moved through shadows. I have a proposition."*  
-The player can refuse. That refusal is logged.
-
-**`dream_sequence`** — On the next long rest  
-The character has a vision generated by the AI using their behaviour tags as emotional core. Unsettling. Personal. At the end, a choice. The choice determines the variant.
-
-**`world_event`** — The world changes visibly  
-A locked door they visited before is now open. A faction they didn't know existed sends a messenger. A location transforms. The world acknowledges who they've become.
-
-### Variant Resolution
-Each hidden class has 2–4 **variants** determined by secondary behaviour at unlock moment.
-
-A character who qualifies for `Shadow Blade` but also has high `mercy` scores gets a different variant than one with high `cruelty`. Same unlock trigger, different mechanics, different AI-generated unlock scene.
-
-You define the variants but *genuinely don't know which one* any given player hits — because it depends on their full behaviour complexity over months of play.
-
-### What this achieves
-The player's specific actions — the merchant they betrayed in session 2, the forbidden book they read when alone, the ally they abandoned — those exact moments are *why* this happened *to this character*.
-
-The AI can reference all of it in the unlock scene because it's in the event log. That's what makes it feel alive.
-
----
-
-## Behaviour system design
-
-### Behaviour tags
-Every player action is tagged server-side before processing. Never shown to players.
-Stored in `character_behaviour_profile.tag_scores` (jsonb).
-
-| Tag | Fires when |
-|---|---|
-| `mercy` | Spared a downed enemy |
-| `cruelty` | Attacked downed enemy, harmed civilians |
-| `greed` | Stole, accepted payment to betray |
-| `loyalty` | Helped party member at personal cost |
-| `betrayal` | Acted against ally interest |
-| `curiosity` | Investigated something with no reward signal |
-| `cowardice` | Fled when party stayed, refused combat |
-| `recklessness` | Attacked without assessing, triggered traps knowingly |
-| `shadow` | Acted deceptively, lied to NPCs |
-| `forbidden` | Interacted with dark artifacts or rituals |
-| `reverence` | Protected sacred sites, aided religious figures |
-| `chaos` | Unprompted destruction, arson, caused panic |
-
-### Consequence arc triggers (threshold patterns)
-Arcs fire when tag score combinations cross thresholds.
-Delivery mechanism is always diegetic — never a system notification.
-
-| Pattern | Threshold | Delivery |
-|---|---|---|
-| shadow ≥ 40 AND betrayal ≥ 20 | Per character | Stranger leaves envelope at inn. Guild job offer. |
-| cruelty ≥ 50 AND mercy < 10 | Per character | Ambush by survivors. Attacker names someone the party hurt. |
-| curiosity ≥ 60 AND forbidden ≥ 30 | Per character | Dream sequence. Entity makes contact. Has a price. |
-| cowardice ≥ 40 AND loyalty < 10 | Per character | NPC trust scores drop. No confrontation — just a shift. |
-| chaos ≥ 50 | Per campaign | Village destabilised flag set. Faction moves in early. |
-
-### Emergent class unlock patterns
-Classes unlock from behaviour — never from a menu. Delivery is always in-world.
-
-| Class | Pattern |
-|---|---|
-| Shadow Blade | shadow ≥ 50, betrayal ≥ 30, cruelty < 20 |
-| Oathbreaker | betrayal ≥ 60, loyalty < 10 |
-| Warden | mercy ≥ 50, loyalty ≥ 40, cruelty < 5 |
-| Forbidden Scholar | curiosity ≥ 70, forbidden ≥ 40 |
-| Chaos Herald | chaos ≥ 60, recklessness ≥ 40 |
-
-Unlock delivery options: NPC pulls character aside, dream sequence,
-item appears that only makes sense given history, enemy recognises
-this specific character by reputation.
-Player realises something shifted. They never see the system behind it.
-
-### DB tables needed (not yet in migrations)
-```sql
-character_behaviour_log (
-  id, character_id, campaign_id, action_type,
-  tags text[], weight int, context jsonb, created_at
-)
-character_behaviour_profile (
-  character_id PK, tag_scores jsonb, updated_at
-)
-character_classes (
-  character_id, class_type, class_name, class_level,
-  unlocked_at, unlock_story text
-)
-consequence_arc_log (
-  id, campaign_id, character_id, arc_id,
-  fired_at, delivery_status text
-)
-```
-
----
-
-## World Engine design
-
-### What it is
-A deterministic server-side system. No LLM involved.
-Checks conditions → writes DB rows → queues narration events.
-Runs inside `runWorldHeartbeat` on movement and rest actions.
-
-### Full heartbeat tick (target implementation)
-```ts
-async function runWorldHeartbeat(client, campaignId, isRest) {
-  await tickNemesisMovement(client, campaignId);      // exists
-  await tickFactionPressure(client, campaignId);      // Phase 4
-  await checkLocationUnlocks(client, campaignId);     // Phase 4
-  await checkQuestTriggers(client, campaignId);       // Phase 4
-  await checkNpcSpawns(client, campaignId);           // Phase 4
-  await checkQuestObjectives(client, campaignId);     // Phase 4
-  await checkConsequenceArcs(client, campaignId);     // Phase 4
-}
-```
-
-### Location unlock conditions (example)
-```ts
-{
-  id: "ashen_gate_ruins",
-  unlocks_when: {
-    party_visited: ["briarwood_wilds"],
-    quest_active: "the_ashen_gate_stirs",
-    party_level_min: 2,
-  }
-}
-```
-
-### NPC template shape
-```ts
-{
-  id: "wandering_merchant",
-  archetype: "merchant",
-  name_pool: ["Gareth", "Sable", "Piotr", "Nessa"],
-  location_types: ["village", "wilderness"],
-  spawn_weight: 8,
-  relationship_start: [0, 20],
-  personality: { ambition: 70, loyalty: 20, fear: 40 },
-  has_quest: false,
-}
-```
-NPCs react based on personality axes, not scripts.
-High ambition + power offer = will take it. High fear + threat = folds.
-
-### Quest objective conditions (server-checkable)
-```ts
-objectives: [
-  { type: "kill_count", target_faction: "Iron Crown", required: 5 },
-  { type: "location_visit", location_id: "thornwall_keep" },
-  { type: "npc_interaction", npc_archetype: "faction_leader" },
-]
-```
-Server increments kill_count in combatEngine.
-Server sets location_visit on movement.
-Server sets npc_interaction on relevant chat/action events.
-When all objectives complete, server marks quest done — AI never does this.
-
-### World state flags
-Boolean or integer flags on the campaign row (or a `campaign_flags` jsonb column).
-These change how every other system behaves.
-
-| Flag | Set when | Effect |
-|---|---|---|
-| `village_destabilised` | chaos tag ≥ 50 | Faction moves in earlier, prices up, NPCs hostile |
-| `faction_ascendant` | faction power ≥ 80 | New location unlocks, assassination attempts begin |
-| `ancient_thing_stirring` | party reaches Ashen Gate | Main quest spine accelerates |
-| `blood_debt` | party killed a named NPC | Survivor mechanic activates |
-| `forbidden_contact` | curiosity+forbidden arc fires | Entity begins sending signs |
-
-### The main quest spine
-5-6 story beats that will happen eventually regardless of player behaviour.
-Timing and context change based on what players have done.
-The ancient threat exists. It is waking up. Players cannot prevent it —
-only shape the circumstances in which they face it.
-Specific beats: TBD during content authoring phase.
-
----
-
-## WebSocket Events
-```
-ACTION_SUBMIT      { type, payload }   -- player action text or structured
-DICE_REQUEST       { dice_type, context, modifier }
-CHAT_MESSAGE       { text }
-JOIN_CAMPAIGN      { invite_code }
-RECONNECT          { campaign_id, character_id }
-COMBAT_ACTION      { action_type, target_id }
-```
-
-### Server → Client (broadcast)
-```
-GAME_EVENT         { type, payload, timestamp }
-AI_NARRATION       { text, event_id }            -- display only
-COMBAT_UPDATE      { encounter, turn_order, participants }
-DICE_RESULT        { roller, dice_type, raw, modifier, final, context }
-PLAYER_JOINED      { user, character }
-PLAYER_LEFT        { user_id }
-QUEST_UPDATE       { quest_id, status, objectives }
-WORLD_UPDATE       { location_id, changes }
-ERROR              { code, message }
-```
-
----
-
-## AI DM System
-
-### Groq integration (dmService.ts)
-```ts
-import OpenAI from "openai";  // Groq is OpenAI-compatible
-
-const groq = new OpenAI({
-  baseURL: "https://api.groq.com/openai/v1",
-  apiKey: process.env.GROQ_API_KEY,
-});
-
-// Model: "llama-3.3-70b-versatile"
-```
-
-### Context snapshot sent to AI (read-only, never full DB)
-```ts
-{
-  location: { name, description, lore },
-  present_npcs: [{ name, role, relationship_to_party }],
-  players: [{ name, race, class, level }],       // no stats, no inventory
-  recent_events: event_log.slice(-10),           // last 10 events only
-  active_quests: [{ title, current_objective }],
-  game_result: { ... }                           // the outcome just calculated
-}
-```
-
-### System prompt structure (promptTemplates.ts)
-```
-You are the Dungeon Master for a private D&D campaign.
-
-CONTEXT (authoritative — do not contradict):
-[structured JSON snapshot]
-
-YOUR ROLE:
-- Narrate what just happened in vivid prose
-- Voice NPCs with personality consistent with their relationship values
-- Build atmosphere and tension
-- Advance the story
-
-FORBIDDEN — never do these under any circumstances:
-- Assign or mention specific XP values
-- Modify or state HP values
-- Declare quest objectives complete
-- Invent items in a character's inventory
-- State a die roll result before one is provided to you
-- Kill or revive characters
-- Contradict any fact in the context block above
-
-Respond with 2–4 paragraphs of narration only. No meta-commentary.
-```
-
----
-
-## Hallucination Prevention — 6 Layers
-
-1. **Structured context only.** AI receives a typed snapshot, not free-form conversation history. Every fact comes from a DB query.
-
-2. **AI output is display-only.** There is no code path from `dmService.ts` response → DB write. Narration is stored as `event_log.ai_narration` (text column, never parsed).
-
-3. **Server calculates first, AI narrates second.** The game engine commits results to DB and broadcasts to clients before the async narration job even starts.
-
-4. **Explicit forbidden-actions block in every system prompt.** Non-negotiable — regenerated fresh on every call, never cached.
-
-5. **Minimal context window.** Only the location, present NPCs, last 10 events, and active quests are sent. The AI cannot speculate about things it hasn't been told.
-
-6. **Output filter before display.** A post-processing regex pass checks narration for patterns like "you gain X XP", "you take X damage", "the quest is complete" and strips or flags them before broadcasting. Defense in depth, not primary enforcement.
-
----
-
-## Development Roadmap
-
-> Tick every box before moving to the next phase. Each phase ends with something genuinely playable.
-
----
-
-### Phase 1 — Foundation
-**Goal: friends can join a room, create characters, and chat in real time**
-
-#### Monorepo + tooling
-- [x] Init Turborepo with `apps/web`, `apps/server`, `packages/shared`
-- [x] Configure TypeScript in all three packages
-- [x] Set up ESLint + Prettier across workspace
-- [x] Add `packages/shared/src/types/` with Character, Campaign, User, Quest, Event types
-- [x] Add `packages/shared/src/constants/` with Races, Classes, DiceTypes, Skills
-
-#### Supabase setup
-- [x] Create Supabase project (free tier)
-- [x] Run migration: create all 12 tables (see schema section)
-- [x] Enable Row Level Security on all tables
-- [x] Write baseline RLS policies: users can only read/write their own campaign data
-- [x] Enable Supabase Auth (email/password)
-- [x] Test DB connection from server with `pg` pool
-
-
-#### Express server (Render)
-- [x] Init Express app with TypeScript
-- [x] Add `cors`, `helmet`, `express-json` middleware
-- [x] Add auth middleware (verify Supabase auth bearer token via `getUser()`)
-- [x] Add `POST /api/auth/register` route
-- [x] Add `POST /api/auth/login` route
-- [x] Add `POST /api/auth/logout` route
-- [x] Add WebSocket server (`ws` library) on same HTTP server
-- [ ] Confirm server deploys to Render free tier
-
-#### WebSocket room manager
-- [x] Create `roomManager.ts` — Map of campaignId → Set of WebSocket connections
-- [x] Handle `JOIN_CAMPAIGN` event — add socket to room
-- [x] Handle `disconnect` — remove socket, broadcast `PLAYER_LEFT`
-- [x] Handle `RECONNECT` event — reattach socket to existing room
-- [x] Enforce max 10 players per room
-- [x] Broadcast helper: `broadcastToRoom(campaignId, event, payload)`
-
-#### Campaign system
-- [x] Add `POST /api/campaigns` — create campaign, generate 6-char invite code
-- [x] Add `GET /api/campaigns/:id` — fetch campaign + members
-- [x] Add `POST /api/campaigns/join` — join via invite code, insert into campaign_members
-- [x] Add `GET /api/campaigns/:id/members` — list party
-
-#### Character creation
-- [x] Add `POST /api/characters` — create character, validate race/class/attributes
-- [x] Add `GET /api/characters/:id` — fetch full character sheet
-- [x] Auto-calculate HP max from class + CON modifier on creation
-- [x] Auto-calculate skill modifiers from attributes on creation
-
-#### Frontend — auth + lobby
-- [x] Init React + Vite + TypeScript + Tailwind
-- [x] Set up Zustand stores: `authStore`, `gameStore`, `uiStore`
-- [x] Build Login page (email/password form → Supabase Auth)
-- [x] Build Register page
-- [x] Build Lobby page: create campaign or join via invite code
-- [x] Build CharacterCreate page: pick race, class, name, roll/assign attributes
-- [x] Protect routes — redirect to login if no session
-- [x] Connect WebSocket on campaign join, store socket in `gameStore`
-
-#### Frontend — game shell
-- [x] Build main game layout: sidebar (party list) + center (narration/chat) + right panel (char sheet)
-- [x] Build live chat component — send `CHAT_MESSAGE`, render `GAME_EVENT` of type chat
-- [x] Build party list component — show name, class, level, online/offline status
-- [x] Show `PLAYER_JOINED` / `PLAYER_LEFT` toast notifications
-- [x] Persist auth session across page refresh
-
-**Phase 1 done when:** Two people can open the app in different browsers, join the same campaign via invite code, see each other in the party list, and send chat messages in real time.
-
----
-
-### Phase 2 — Game systems
-**Goal: players can explore, roll dice, manage inventory, and track quests**
-
-#### Dice engine
-- [x] Build `diceEngine.ts` — `rollDice(type, modifier)` using `crypto.randomInt`
-- [x] Add `DICE_REQUEST` WebSocket handler on server
-- [x] Server rolls dice, writes result to `dice_rolls` table
-- [x] Server broadcasts `DICE_RESULT` to all room members
-- [x] Build DicePanel UI — buttons for d4/d6/d8/d10/d12/d20/d100
-- [x] Show roll history in chat feed with roller name and context
-- [x] Add modifier input to dice panel (+/- value before roll)
-
-#### Action processor
-- [x] Build `actionProcessor.ts` — receives raw action text, classifies it
-- [x] Add `ACTION_SUBMIT` WebSocket handler
-- [x] Validate action: is it the player's character? Are they in the campaign?
-- [x] Dispatch to correct subsystem (exploration, skill check, interact) — **PARTIAL**: skill checks now roll d20 + modifier and log event; NPC interactions still treated as generic exploration
-- [x] Write result to `event_log`
-- [x] Broadcast `GAME_EVENT` to room
-
-#### World system
-- [x] Seed starting world: 3 locations (town, dungeon entrance, wilderness)
-- [x] Add `GET /api/campaigns/:id/world` — return locations, connections, state
-- [ ] Build location component — show name, type, description, and lore — **NOT IMPLEMENTED**: server returns world data but client has no UI to display locations or allow movement
-- [ ] Show present NPCs in the location component — **NOT IMPLEMENTED**: blocked on location UI
-- [x] Allow movement between connected locations (server validates, updates character position in world_state)
-- [x] World state changes persist — if a location is "discovered", it stays discovered
-- [x] Add `WORLD_UPDATE` WebSocket broadcast on state change
-
-#### Inventory system
-- [x] Seed item catalog (20 starter items: weapons, armor, potions, misc)
-- [x] Add `POST /api/characters/:id/inventory` — server adds item (never client-direct)
-- [x] Add `DELETE /api/characters/:id/inventory/:itemId` — drop item
-- [x] Add `PATCH /api/characters/:id/inventory/:itemId/equip` — toggle equipped
-- [x] Build Inventory panel UI — grid of items, equip/drop buttons
-- [x] Show equipped items on character sheet with stat bonuses applied
-- [ ] Gold transactions — server-only, logged in event_log
-
-#### Quest system
-- [x] Add `POST /api/campaigns/:id/quests` — create quest (server/DM only)
-- [x] Add `GET /api/campaigns/:id/quests` — list active + completed quests
-- [x] Add `PATCH /api/campaigns/:id/quests/:id/objective` — mark objective complete (server only)
-- [x] Build QuestLog UI — active quests, objectives with checkmarks, completed section
-- [x] Add `QUEST_UPDATE` WebSocket broadcast on any quest change
-- [x] Seed 3 starter quests for new campaigns
-
-#### Character sheet
-- [x] Build basic CharacterSheet panel: attributes, skills, HP, gold — **PARTIAL**: all core attributes now shown including skills list
-- [x] Show derived stats: AC (from equipped armor), attack bonus, spell save DC
-- [ ] Add level-up logic: XP threshold check, HP increase, stat point allocation
-- [x] Skill check roll button on each skill (auto-rolls d20 + skill modifier)
-- [x] Character sheet updates live via `GAME_EVENT` broadcast
-
-#### Event log UI
-- [x] Build scrolling event log — shows all game events in chronological order
-- [x] Colour-code by event type: combat (red), quest (gold), chat (white), system (grey)
-- [x] Load last 50 events on join (catch-up for reconnects)
-
-**Phase 2 done when:** Players can move between locations (once location UI is built), roll dice with modifiers, pick up items, equip gear, see quests in a log, and all of it persists across page reloads. **NOTE:** Server-side infrastructure for world movement is complete; frontend location/movement UI still needed before Phase 2 is truly playable.
-
----
-
-### Phase 3 — AI + Combat + Living World
-**Goal: full sessions with AI narration, turn-based combat, living NPCs, and a world that remembers**
-
-#### Combat engine
-- [x] Build `combatEngine.ts` with full turn-based logic
-- [x] Initiative roll: d20 + DEX modifier for each participant, sorted descending
-- [x] Attack roll: d20 + attack bonus vs target AC — hit or miss
-- [x] Damage roll: weapon damage dice + STR/DEX modifier on hit
-- [x] Apply damage to target HP in DB, check for death (HP ≤ 0)
-- [x] Death saves: d20 on downed character's turn, 3 successes = stable, 3 fails = dead
-- [x] Conditions: poisoned, stunned, paralysed — store in participant jsonb, apply mechanical effects
-- [x] Enemy AI turn logic (code-based): pick nearest player, roll attack, apply damage
-- [x] Handle end of combat: XP distribution, loot generation (server calculates)
-- [x] Add `COMBAT_ACTION` WebSocket handler — validate it's actor's turn, execute, broadcast `COMBAT_UPDATE`
-- [x] Build CombatInterface UI: turn order tracker, HP bars, action buttons (attack, dodge, end turn)
-- [x] Show dice rolls animated in UI during combat (Deferred to Phase 4 Polish)
-
-#### Nemesis System
-- [x] Build `nemesisEngine.ts` — handles enemy promotion, memory, and personality
-- [x] After combat: check if any enemies survived; promote to nemesis with level up, scars, and grudge selection
-- [x] Track nemesis history: database table `nemesis_history` with full encounter logs
-- [x] Add target_character_id: targets player with highest impact or who downed them
-- [x] Generate nemesis personality (brutal, cowardly, cunning, honorable, vengeful, warlord, paranoid) — affects tactics and target selection
-- [x] Nemesis AI: custom targeting rules and minion command logic per personality/tier
-- [x] On nemesis death: successor system assigns grudge, bounty, and successor links
-- [x] Build nemesis gallery UI — premium frontend gallery with card grids, timelines, and DM controls
-
-#### Faction Pressure System
-- [x] Create base factions for starter world (Order of the Cloaked Flame, Blackwater Syndicate, Merchant's Guild, Druidic Circle)
-- [x] Build `factionEngine.ts` — tracks power, disposition, goals (integrated into worldEngine.ts)
-- [x] Implement power calculation: faction gains power when they control locations/defeat enemies, lose it when locations are liberated
-- [x] Implement disposition calculation: changes based on party actions for/against that faction
-- [x] Build faction_events trigger system: when power crosses thresholds (50, 70, 90), fire corresponding actions
-- [x] Action types: 'seize_location', 'send_assassin', 'offer_contract', 'siege', 'install_ruler'
-- [x] Persist faction_events to DB; show in world_tick_log
-
-#### World Heartbeat — Simulation Tick
-- [x] Build `worldHeartbeat.ts` — integrated nemesis movement and rest ambushes into action processor
-- [x] Tick nemesis movement: move active nemeses between locations based on grudge and faction coordination
-- [x] Grudge-biased rest ambush: high grudge triggers ambush on party rest
-- [x] Warlord location control: warlord-tier nemeses claim locations under `nemesis_controlled` flags
-- [x] Tick faction power: update based on current controlled locations and goals
-- [x] Tick faction events: fire any events with trigger_condition met
-- [x] Tick NPC agendas: update short-term goal progress; if stuck, trigger NPC-initiated world event
-- [x] Generate new rumours from recent events; seed into tavern NPCs (via npc.memory_log)
-- [x] Update location state: if under faction siege, mark as 'under_occupation', update description
-- [x] Log all changes to world_tick_log with reasoning
-- [x] Broadcast `WORLD_UPDATE` to all connected players showing faction-driven changes
-
-#### NPC Agenda System
-- [x] Upgrade `npcs` table: add short_term_goal, long_term_goal, secret, agenda_state, relationships
-- [x] Build `npcAgendaEngine.ts` — tracks NPC goals and progress
-- [x] Short-term goals: investigation, acquisition, socialising (each has a success condition)
-- [x] Long-term goals: self-improvement, power, wealth (check progress on each world tick)
-- [x] Secrets: revealed only if relationship trust > 80 or under duress
-- [x] Relationship tracking: if NPC helps party, trust increases; if party betrays them, trust decreases
-- [x] NPC-initiated events: if NPC reaches end of short-term goal without player help, they take solo action (accuse someone, strike a deal, abandon location)
-- [x] Build NPC profile UI — show goals, secrets (if known), and relationship status with party
-
-#### Groq narration upgrade
-- [x] Expand context builder to include: nemesis history, NPC agenda status, faction disposition, recent world_tick changes
-- [x] Build `nemesisContextBuilder.ts` — extracts nemesis personality and history for AI
-- [x] Build `factionContextBuilder.ts` — extracts faction goals and recent actions for world narration
-- [x] Expand system prompt: *"Narrate using the nemesis's personality. Reference their specific history. Show the world reacting to faction pressure."*
-- [x] Stream narration that incorporates: specific character names (nemesis), specific past events (history), faction movements (world pressure)
-
-#### Procedural quest generation (upgraded)
-- [x] Build quest generator: pick template (fetch, kill, escort, find, political, faction)
-- [x] Political quests: generated from NPC agendas and faction conflicts
-- [x] Faction quests: generated from faction_events (seize location → defend location quest)
-- [x] Server can auto-generate a quest when party enters a location with no active quests
-- [x] Generated quests go through same DB + broadcast flow as hand-authored quests
-- [x] Quests now reference nemeses and factions in their objectives (kill nemesis, secure location for faction)
-
-#### Emergent Class System
-- [x] Create `character_behaviour_log` and `character_behaviour_profile` tables
-- [x] Create `character_classes` table (replace single class column on characters)
-- [x] Build `hiddenClassEngine.ts` — runs after every action, checks unlock thresholds
-- [x] Implement behaviour tagging: every action type (kill, spare, lie, betray, etc.) increments relevant tags
-- [x] Define `HIDDEN_CLASSES` config file with 10–15 pattern definitions (editable, no code changes needed)
-- [x] Build behaviour threshold checker: when profile crosses unlock_conditions, queue unlock event
-- [x] Implement three unlock delivery types:
-  - `npc_contact`: AI-generated NPC encounter referencing character's behaviour history
-  - `dream_sequence`: AI-generated dream vision using behaviour tags as emotional core
-  - `world_event`: Visible world change (door opens, faction messenger arrives, etc.)
-- [x] Build variant resolver: determine which variant based on secondary behaviour scores
-- [x] Store unlock_story narration in `character_class_unlocks` for posterity
-- [x] Allow player to refuse unlock (refusal is logged)
-- [x] Build hidden class UI: show class name and flavour only after unlock
-- [x] Extend AI context builder: include character's behaviour tags and unlock history
-- [x] Ensure AI references actual behaviour history in unlock narration
-
-#### Phase 2 catch-up (still needed before Phase 3 is playable)
-- [ ] **Build location/world navigation UI** — players can see locations, see connections, click to move (blocks all Phase 2 completion)
-- [x] Build inventory system REST endpoints + UI (needed before equipment affects combat)
-- [x] Build quest log UI (needed for faction-generated quests)
-- [x] Seed item catalog and starter quests
-
-**Phase 3 done when:** Party can fight a named Nemesis who remembers them by name, the world pressure changes based on faction power, a new quest appears because an NPC's agenda progressed, a character unlocks a hidden class through their behaviour pattern, and after Session 1 the party logs in to find the world has changed while they were gone.
-
----
-
-### Phase 4 — Polish
-**Goal: something you'd actually want to show a friend**
-
-#### UI Polish
-- [x] Implement animated dice rolls during combat
-- [ ] Add sound effects for attacks, taking damage, and UI clicks
-- [ ] Responsive design pass for mobile screens
-- [ ] Loading states on all async actions
-- [ ] Error handling: toast notifications for server errors, disconnects, validation failures
-- [ ] Reconnect banner: "Reconnecting..." shown when WS drops, auto-reconnects
-- [ ] Smooth HP bar transitions in combat
-#### World encyclopedia
-- [ ] Build encyclopedia page: browsable list of discovered locations, known NPCs, factions
-- [ ] Entries only appear after player has visited/met them (fog of war)
-- [ ] NPC entries show relationship status and known interaction history
-
-#### Session history
-- [ ] Build session log page: scrollable full history of all events and narration
-- [ ] Filter by event type
-- [ ] "Share session recap" — generates plain text summary of the session
-
-#### Balancing
-- [ ] XP per enemy type balanced to level 1→5 in ~10 sessions
-- [ ] Starting gold and item prices tuned for early game
-- [ ] Enemy HP and damage values playtested at level 1, 3, 5
-- [ ] Encounter rate: random combat trigger on wilderness movement (~30% chance)
-
-#### Production deploy
-- [x] Configure Render deploy (set all env vars, health check endpoint)
-- [x] Configure Vercel deploy (set VITE_ env vars, production build)
-- [ ] Set up Supabase production project (separate from dev)
-- [ ] Smoke test: full session from register → campaign → combat → AI narration on production URLs
-- [x] Write one-page setup guide for invite link sharing
-
-**Phase 4 done when:** You can send a friend an invite link, they sign up, join your campaign, play a session with combat and AI narration, and it feels like a real game — not a prototype.
-
----
+## Current App Shape
+
+`apps/web/src/App.tsx` routes the whole experience:
+
+- no token or user -> `AuthPage`
+- auth callback path -> `AuthCallback`
+- token and user but no active campaign -> `LobbyPage`
+- active campaign -> `GamePage`
+
+`apps/web/src/pages/GamePage.tsx` is the main shell and pulls in:
+
+- websocket reconnect banner
+- dice panel
+- nemesis gallery
+- faction control room
+- encyclopedia panel
+- balance dashboard
+- inventory, quests, travel, combat, and character state
+
+## Server Shape
+
+`apps/server/src/index.ts` currently wires:
+
+- Express middleware
+- auth routes
+- campaign routes
+- character routes
+- faction routes
+- encyclopedia routes
+- balance routes
+- websocket server
+- narration broadcasts
+- graceful shutdown for HTTP, websocket, and pg pool
+- periodic balancing timer
 
 ## API Routes
 
-```
-// === Implemented REST Endpoints ===
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/auth/logout
-GET    /api/auth/me
-GET    /api/me
+Implemented or present in code:
 
-POST   /api/campaigns                    # create campaign
-GET    /api/campaigns                    # list campaigns user belongs to
-POST   /api/campaigns/join               # join via invite code
-GET    /api/campaigns/:id                # get campaign details
-GET    /api/campaigns/:id/members        # list campaign members and linked characters
-GET    /api/campaigns/:id/events         # recent event log catch-up
-GET    /api/campaigns/:id/world          # locations, connections, and campaign world state
-GET    /api/campaigns/:id/quests         # list active and completed quests
-GET    /api/campaigns/:id/quests/:questId # retrieve one quest
-POST   /api/campaigns/:id/quests         # DM creates a quest
-PATCH  /api/campaigns/:id/quests/:questId/objective # DM toggles a quest objective
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `GET /api/me`
+- `GET /health`
+- `GET /health/db`
+- campaign, character, faction, encyclopedia, balance, and nemesis routes under `/api/campaigns` and `/api/characters`
 
-POST   /api/characters                   # create character
-GET    /api/characters/:id               # retrieve character details
-GET    /api/characters/campaign/:campaignId # list campaign characters
-GET    /api/characters/item-catalog      # list starter item catalog
-GET    /api/characters/:id/inventory     # list character inventory
-POST   /api/characters/:id/inventory     # grant item to character
-DELETE /api/characters/:id/inventory/:itemId # drop inventory item
-PATCH  /api/characters/:id/inventory/:itemId/equip # equip or unequip item
+## Development Roadmap
 
-// === Planned REST Endpoints (Phase 2 & 3) ===
-PATCH  /api/characters/:id               # server-only mutations
+### Phase 1 - Foundation
+Auth, lobby, campaign join/create, room flow, and reconnect are in place.
 
-```
+### Phase 2 - Core Game Systems
+Dice, quests, inventory, world travel, character management, encyclopedia, and balance features are in place.
 
-All mutation endpoints require auth middleware. Character stat updates are server-internal only — no public PATCH route for HP, gold, or inventory.
+### Phase 3 - Living World
+Combat loop, nemesis system, faction pressure, AI narration, and world-state propagation are in place.
 
-Health endpoints:
-`GET /health` for app status and `GET /health/db` for database connectivity.
-
----
+### Phase 4 - Polish
+Remaining work is mostly UI refinement, mobile tuning, hardening, and deploy quality-of-life fixes.
 
 ## Environment Variables
 
-### Server (.env)
-```
-DATABASE_URL=postgresql://...          # Supabase connection string
+```text
+Server:
+DATABASE_URL=postgresql://...
 SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_ANON_KEY=...                  # public auth client key
-SUPABASE_SERVICE_KEY=...               # server-side only
-GROQ_API_KEY=...                       # from console.groq.com (free)
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_KEY=...
+GROQ_API_KEY=...
 PORT=3001
 NODE_ENV=production
-```
 
-### Client (.env)
-```
+Client:
 VITE_API_URL=https://your-app.onrender.com
 VITE_WS_URL=wss://your-app.onrender.com
 VITE_SUPABASE_URL=https://xxx.supabase.co
 VITE_SUPABASE_ANON_KEY=...
 ```
 
----
-
 ## Key Design Decisions
 
-**Why Groq over Ollama/local models?** The constraint is zero cost and no local downloads. Groq's free tier is the only option that satisfies both. The rate limits are well above what a friend group needs.
-
-**Why WebSockets over Supabase Realtime for game events?** Supabase Realtime is built on Postgres changes — excellent for data sync but adds latency and complexity for bidirectional game events. A ws library on the Express server gives full control over room logic, reconnect handling, and event ordering. Supabase Realtime can optionally be used as a fallback.
-
-**Why Turborepo?** The `@dnd/shared` package lets the frontend import the exact same TypeScript types as the server. Prevents type drift between client and server models — a common source of bugs in multiplayer games.
-
-**Why jsonb for attributes/skills/stats?** D&D has many optional systems (feats, spell slots, class features). Jsonb avoids constant migration churn as game content expands. Core game logic uses known keys; the rest is flexible.
-
-**Why store AI narration in event_log?** Session replay, party members who reconnected mid-session, and the world encyclopedia all benefit from a persistent narration history. It also makes debugging AI output easy.
-
----
-
-## Recommended next steps
-
-### Immediate (Phase 3 completion)
-1. Create `apps/server/src/ai/narrationEmitter.ts`
-2. Apply wiring patches from `combatEngine_wiring.ts` and `actionProcessor_wiring.ts`
-3. Add `AI_NARRATION` WS case to `gameStore.ts`
-4. Add narration `<p>` display to `GamePage.tsx` event feed
-5. `npm install openai` in `apps/server`
-6. Set `GROQ_API_KEY` in Render env vars
-7. Add behaviour tracking tables to a new migration
-
-### Phase 4 — World Engine (in order)
-8. Design the 12 world state flags in detail
-9. Design the 8 consequence arc templates
-10. Author the main quest spine (5-6 beats)
-11. Build `npcTemplates.ts` in shared package (~30 templates)
-12. Build `locationTemplates.ts` in shared package (~15 templates)
-13. Build `questTemplates.ts` with structured objective conditions
-14. Implement `checkLocationUnlocks` in worldEngine.ts
-15. Implement `checkQuestTriggers` in worldEngine.ts
-16. Implement `checkNpcSpawns` in worldEngine.ts
-17. Implement `checkQuestObjectives` in worldEngine.ts
-18. Implement `checkConsequenceArcs` in worldEngine.ts
-19. Implement `tickFactionPressure` in worldEngine.ts
-20. Build `hiddenClassEngine.ts`
-21. Wire full heartbeat tick in `nemesisEngine.ts`
-
----
-
-*brain.md — last updated: 2026-06-08 World Engine and behaviour system update*
+- The server verifies auth and owns game state.
+- The AI is narration only and never writes authoritative state directly.
+- WebSocket rooms should remain small and stable for a private group.
+- Campaign, combat, quest, and world changes are persisted through PostgreSQL.
+- `brain.md` is the living summary for future sessions and must stay aligned with the real codebase.
