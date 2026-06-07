@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { API_URL, WS_URL } from "./config";
 import { RACES, CLASSES } from "@dnd/shared";
-import type { DiceType, ServerWSMessage, Character, Campaign, ServerMessageMap, ServerMessageType } from "@dnd/shared";
+import type { DiceType, ServerWSMessage, Character, Campaign, Location, ServerMessageMap, ServerMessageType } from "@dnd/shared";
 import "./App.css";
 
 interface LobbyCampaign extends Campaign {
@@ -35,9 +35,15 @@ interface ExplorationPayload {
 }
 
 interface ActionPayload {
-  action_type: "exploration" | "skill_check" | "npc_interaction" | "other";
+  action_type: "exploration" | "skill_check" | "npc_interaction" | "other" | "movement";
   text: string;
   actor_name: string;
+}
+
+interface WorldState {
+  starting_location_id?: string;
+  discovered_location_ids?: string[];
+  character_locations?: Record<string, string>;
 }
 
 function App() {
@@ -68,6 +74,9 @@ function App() {
   const [myCharacter, setMyCharacter] = useState<Character | null>(null);
   const [eventLogs, setEventLogs] = useState<GameOrSystemEvent[]>([]);
   const [chatMessage, setChatMessage] = useState("");
+  const [worldLocations, setWorldLocations] = useState<Location[]>([]);
+  const [worldState, setWorldState] = useState<WorldState>({});
+  const [worldError, setWorldError] = useState("");
   
   // Character Creator State
   const [charName, setCharName] = useState("");
@@ -133,6 +142,19 @@ function App() {
       }
     } catch (err) {
       console.error("Error fetching party characters:", err);
+    }
+  };
+
+  const fetchWorld = async (campaignId: string) => {
+    try {
+      setWorldError("");
+      const data = await apiFetch(`/api/campaigns/${campaignId}/world`);
+      setWorldLocations(data.locations || []);
+      setWorldState(data.world_state || {});
+    } catch (err) {
+      console.error("Error fetching campaign world:", err);
+      const msg = err instanceof Error ? err.message : "Unable to load campaign world";
+      setWorldError(msg);
     }
   };
 
@@ -230,6 +252,17 @@ function App() {
           case "DICE_RESULT": {
             // Server broadcasts DICE_RESULT but also publishes a GAME_EVENT for persistence.
             // Relying on GAME_EVENT prevents double roll cards rendering.
+            break;
+          }
+
+          case "WORLD_UPDATE": {
+            const { changes } = message.payload as ServerMessageMap["WORLD_UPDATE"];
+            setWorldState((prev) => ({
+              ...prev,
+              discovered_location_ids: changes.discovered_location_ids || prev.discovered_location_ids,
+              character_locations: changes.character_locations || prev.character_locations,
+            }));
+            fetchWorld(activeCampaign.id);
             break;
           }
 
@@ -334,6 +367,7 @@ function App() {
     setActiveCampaign(campaign);
     setActiveRole(role);
     fetchPartyCharacters(campaign.id);
+    fetchWorld(campaign.id);
   };
 
   // Character Creator
@@ -399,6 +433,21 @@ function App() {
       })
     );
     setChatMessage("");
+  };
+
+  const moveToLocation = (location: Location) => {
+    if (!ws || !myCharacter) return;
+
+    ws.send(
+      JSON.stringify({
+        type: "ACTION_SUBMIT",
+        payload: {
+          type: "exploration",
+          text: `Move to ${location.name}`,
+          target_location_id: location.id,
+        },
+      })
+    );
   };
 
   const rollAttribute = (attrName: string, score: number) => {
@@ -503,6 +552,15 @@ function App() {
 
   // Render Campaign Game Arena if in an active campaign
   if (activeCampaign) {
+    const activeCharacterLocationId = myCharacter
+      ? worldState.character_locations?.[myCharacter.id] || worldState.starting_location_id
+      : worldState.starting_location_id;
+    const currentLocation = worldLocations.find((location) => location.id === activeCharacterLocationId);
+    const connectedLocations = currentLocation
+      ? worldLocations.filter((location) => currentLocation.connected_locations.includes(location.id))
+      : [];
+    const discoveredLocationIds = new Set(worldState.discovered_location_ids || []);
+
     return (
       <div className="game-container">
         <header className="game-header">
@@ -552,6 +610,40 @@ function App() {
                 <div style={{ color: "var(--text-muted)", fontSize: "0.9rem", fontStyle: "italic" }}>
                   No characters created yet.
                 </div>
+              )}
+            </div>
+
+            <div className="world-panel">
+              <div className="sidebar-section-title">Current Location</div>
+              {worldError && <div className="auth-error">{worldError}</div>}
+              {currentLocation ? (
+                <div className="location-card">
+                  <div className="location-name">{currentLocation.name}</div>
+                  <div className="location-type">{currentLocation.type || "location"}</div>
+                  <p>{currentLocation.description}</p>
+                  {currentLocation.lore && <div className="location-lore">{currentLocation.lore}</div>}
+                </div>
+              ) : (
+                <div className="empty-note">No starting location found.</div>
+              )}
+
+              {connectedLocations.length > 0 && (
+                <>
+                  <div className="sidebar-section-title movement-title">Travel</div>
+                  <div className="movement-list">
+                    {connectedLocations.map((location) => (
+                      <button
+                        key={location.id}
+                        className="btn btn-gold movement-button"
+                        onClick={() => moveToLocation(location)}
+                        disabled={!myCharacter}
+                        title={myCharacter ? `Travel to ${location.name}` : "Create a character before travelling"}
+                      >
+                        {discoveredLocationIds.has(location.id) ? location.name : "Unknown Path"}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </aside>

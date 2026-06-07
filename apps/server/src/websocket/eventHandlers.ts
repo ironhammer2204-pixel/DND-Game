@@ -320,8 +320,11 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
         const msg = message as ClientWSMessage<"ACTION_SUBMIT">;
 
         try {
-          const { event } = await processPlayerAction(pool, participant, msg.payload);
+          const { event, worldUpdate } = await processPlayerAction(pool, participant, msg.payload);
           RoomManager.broadcastToRoom(participant.campaignId, "GAME_EVENT", event);
+          if (worldUpdate) {
+            RoomManager.broadcastToRoom(participant.campaignId, "WORLD_UPDATE", worldUpdate);
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unable to process action";
           return RoomManager.sendToParticipant(ws, "ERROR", {

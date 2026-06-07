@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { PoolClient } from "pg";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { pool } from "../db/client";
 
@@ -21,6 +22,71 @@ async function getMembership(campaignId: string, userId: string) {
   );
 
   return memberCheck.rows[0] || null;
+}
+
+async function seedStartingWorld(client: PoolClient, campaignId: string) {
+  const townRes = await client.query(
+    `INSERT INTO public.locations (campaign_id, name, type, description, state, lore)
+     VALUES ($1, 'Emberfall Village', 'village', $2, $3, $4)
+     RETURNING id`,
+    [
+      campaignId,
+      'A lantern-lit frontier village with a busy tavern, a wary watchtower, and muddy roads leading into wild country.',
+      JSON.stringify({ discovered: true }),
+      'Emberfall was founded beside old dwarven mile markers that point toward ruins in the eastern hills.',
+    ]
+  );
+  const townId = townRes.rows[0].id;
+
+  const wildernessRes = await client.query(
+    `INSERT INTO public.locations (campaign_id, name, type, description, state, lore)
+     VALUES ($1, 'Briarwood Wilds', 'wilderness', $2, $3, $4)
+     RETURNING id`,
+    [
+      campaignId,
+      'A stretch of dense forest, broken cart paths, and misty gullies where tracks disappear quickly after rain.',
+      JSON.stringify({ discovered: false }),
+      'Travelers claim old campfires sometimes glow here without anyone tending them.',
+    ]
+  );
+  const wildernessId = wildernessRes.rows[0].id;
+
+  const dungeonRes = await client.query(
+    `INSERT INTO public.locations (campaign_id, name, type, description, state, lore)
+     VALUES ($1, 'Ashen Gate Ruins', 'dungeon', $2, $3, $4)
+     RETURNING id`,
+    [
+      campaignId,
+      'A collapsed stone archway half-buried in thorn roots, opening into stairs that breathe cold air from below.',
+      JSON.stringify({ discovered: false }),
+      'The Ashen Gate was sealed after a mining company vanished beneath it three generations ago.',
+    ]
+  );
+  const dungeonId = dungeonRes.rows[0].id;
+
+  await client.query("UPDATE public.locations SET connected_locations = $1::uuid[] WHERE id = $2", [
+    [wildernessId],
+    townId,
+  ]);
+  await client.query("UPDATE public.locations SET connected_locations = $1::uuid[] WHERE id = $2", [
+    [townId, dungeonId],
+    wildernessId,
+  ]);
+  await client.query("UPDATE public.locations SET connected_locations = $1::uuid[] WHERE id = $2", [
+    [wildernessId],
+    dungeonId,
+  ]);
+
+  const worldState = {
+    starting_location_id: townId,
+    discovered_location_ids: [townId],
+    character_locations: {},
+  };
+
+  await client.query("UPDATE public.campaigns SET world_state = $1 WHERE id = $2", [
+    JSON.stringify(worldState),
+    campaignId,
+  ]);
 }
 
 // POST /api/campaigns - Create a new campaign
@@ -57,6 +123,8 @@ router.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response
       [name, inviteCode, userId]
     );
     const campaign = campaignRes.rows[0];
+
+    await seedStartingWorld(client, campaign.id);
 
     // 2. Add owner as the DM in campaign_members
     await client.query(
@@ -236,6 +304,44 @@ router.get("/:id/events", authMiddleware, async (req: AuthenticatedRequest, res:
   } catch (error) {
     console.error("List campaign events error:", error);
     res.status(500).json({ error: "Internal server error fetching campaign events" });
+  }
+});
+
+// GET /api/campaigns/:id/world - Return locations and campaign world state
+router.get("/:id/world", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const campaignId = req.params.id;
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const membership = await getMembership(campaignId, userId);
+    if (!membership) {
+      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
+    }
+
+    const campaignRes = await pool.query("SELECT world_state FROM public.campaigns WHERE id = $1", [campaignId]);
+    if (campaignRes.rows.length === 0) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    const locationsRes = await pool.query(
+      `SELECT id, campaign_id, name, type, description, state, connected_locations, lore
+       FROM public.locations
+       WHERE campaign_id = $1
+       ORDER BY name ASC`,
+      [campaignId]
+    );
+
+    res.json({
+      world_state: campaignRes.rows[0].world_state,
+      locations: locationsRes.rows,
+    });
+  } catch (error) {
+    console.error("Get campaign world error:", error);
+    res.status(500).json({ error: "Internal server error fetching campaign world" });
   }
 });
 

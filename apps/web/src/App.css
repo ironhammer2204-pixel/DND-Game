@@ -292,6 +292,69 @@
   font-style: italic;
 }
 
+.world-panel {
+  margin-top: 28px;
+  border-top: 1px solid var(--bg-panel);
+  padding-top: 18px;
+}
+
+.location-card {
+  background-color: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.location-name {
+  color: var(--text-white);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.location-type {
+  color: var(--accent-gold);
+  font-size: 0.75rem;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.location-card p {
+  color: var(--text-light);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  margin: 10px 0 0;
+}
+
+.location-lore {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.4;
+  margin-top: 10px;
+}
+
+.movement-title {
+  margin-top: 18px;
+}
+
+.movement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.movement-button {
+  width: 100%;
+  text-align: left;
+}
+
+.empty-note {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
 .online-dot {
   width: 8px;
   height: 8px;

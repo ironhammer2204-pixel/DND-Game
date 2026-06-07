@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import { ServerMessageMap } from "@dnd/shared";
 
 type ActionType = "exploration" | "skill_check" | "npc_interaction" | "other";
@@ -13,13 +13,120 @@ export interface ActionParticipant {
 export interface ActionInput {
   type: ActionType;
   text: string;
+  target_location_id?: string;
 }
 
 export interface ProcessedAction {
   event: ServerMessageMap["GAME_EVENT"];
+  worldUpdate?: ServerMessageMap["WORLD_UPDATE"];
 }
 
 const VALID_ACTION_TYPES = new Set<ActionType>(["exploration", "skill_check", "npc_interaction", "other"]);
+
+interface CampaignWorldState {
+  starting_location_id?: string;
+  discovered_location_ids?: string[];
+  character_locations?: Record<string, string>;
+}
+
+async function processMovementAction(
+  client: PoolClient,
+  participant: ActionParticipant,
+  characterName: string,
+  targetLocationId: string
+): Promise<ProcessedAction> {
+  const campaignRes = await client.query("SELECT world_state FROM public.campaigns WHERE id = $1 FOR UPDATE", [
+    participant.campaignId,
+  ]);
+
+  if (campaignRes.rows.length === 0) {
+    throw new Error("Campaign not found");
+  }
+
+  const worldState = (campaignRes.rows[0].world_state || {}) as CampaignWorldState;
+  const currentLocationId =
+    worldState.character_locations?.[participant.characterId || ""] || worldState.starting_location_id;
+
+  if (!currentLocationId) {
+    throw new Error("Campaign world has no starting location yet");
+  }
+
+  const locationsRes = await client.query(
+    `SELECT id, name, connected_locations
+     FROM public.locations
+     WHERE campaign_id = $1 AND id = ANY($2::uuid[])`,
+    [participant.campaignId, [currentLocationId, targetLocationId]]
+  );
+
+  const currentLocation = locationsRes.rows.find((location) => location.id === currentLocationId);
+  const targetLocation = locationsRes.rows.find((location) => location.id === targetLocationId);
+
+  if (!currentLocation || !targetLocation) {
+    throw new Error("Location not found in this campaign");
+  }
+
+  if (currentLocation.id !== targetLocation.id && !currentLocation.connected_locations.includes(targetLocation.id)) {
+    throw new Error(`${targetLocation.name} is not connected to your current location`);
+  }
+
+  const characterLocations = {
+    ...(worldState.character_locations || {}),
+    [participant.characterId as string]: targetLocation.id,
+  };
+  const discoveredLocationIds = Array.from(
+    new Set([...(worldState.discovered_location_ids || []), currentLocation.id, targetLocation.id])
+  );
+  const nextWorldState: CampaignWorldState = {
+    ...worldState,
+    starting_location_id: worldState.starting_location_id || currentLocation.id,
+    discovered_location_ids: discoveredLocationIds,
+    character_locations: characterLocations,
+  };
+
+  await client.query("UPDATE public.campaigns SET world_state = $1 WHERE id = $2", [
+    JSON.stringify(nextWorldState),
+    participant.campaignId,
+  ]);
+  await client.query("UPDATE public.locations SET state = state || $1::jsonb WHERE id = $2", [
+    JSON.stringify({ discovered: true }),
+    targetLocation.id,
+  ]);
+
+  const payload = {
+    action_type: "movement",
+    text: `${characterName} travels from ${currentLocation.name} to ${targetLocation.name}.`,
+    actor_name: characterName,
+    from_location_id: currentLocation.id,
+    from_location_name: currentLocation.name,
+    to_location_id: targetLocation.id,
+    to_location_name: targetLocation.name,
+  };
+
+  const logRes = await client.query(
+    "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'exploration', $2, $3) RETURNING id, created_at",
+    [participant.campaignId, participant.characterId, JSON.stringify(payload)]
+  );
+
+  return {
+    event: {
+      id: logRes.rows[0].id,
+      type: "exploration",
+      actor_name: characterName,
+      payload,
+      timestamp: logRes.rows[0].created_at,
+    },
+    worldUpdate: {
+      location_id: targetLocation.id,
+      changes: {
+        current_location_id: targetLocation.id,
+        current_location_name: targetLocation.name,
+        character_id: participant.characterId,
+        character_locations: characterLocations,
+        discovered_location_ids: discoveredLocationIds,
+      },
+    },
+  };
+}
 
 export async function processPlayerAction(
   pool: Pool,
@@ -53,10 +160,27 @@ export async function processPlayerAction(
     throw new Error("Your active character is not linked to this campaign session");
   }
 
+  const characterName = memberCheck.rows[0].character_name || participant.username;
+
+  if (input.target_location_id) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await processMovementAction(client, participant, characterName, input.target_location_id);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   const payload = {
     action_type: actionType,
     text,
-    actor_name: memberCheck.rows[0].character_name || participant.username,
+    actor_name: characterName,
   };
 
   const logRes = await pool.query(

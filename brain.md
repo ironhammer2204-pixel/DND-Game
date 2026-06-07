@@ -35,6 +35,7 @@ Last updated: 2026-06-07
   - Added authoritative `ACTION_SUBMIT` handling through `actionProcessor.ts`, including membership/character validation, `event_log` persistence, and room broadcast.
   - Completed campaign member/event REST endpoints: `GET /api/campaigns/:id/members` and `GET /api/campaigns/:id/events`.
   - Updated campaign detail responses to include members, made campaign join idempotent for existing members, and fixed character campaign route ordering.
+  - Added Phase 2 world basics: new campaigns seed Emberfall Village, Briarwood Wilds, and Ashen Gate Ruins; clients can fetch world state, view the current location, move along connected paths, persist character location in `campaigns.world_state`, and receive `WORLD_UPDATE` broadcasts.
   - Verified server/web TypeScript with no-emit checks and lint checks pass cleanly; full emit build is currently blocked locally by generated-output permission errors in `dist`, `node_modules/.tmp`, and Turbo logs.
 
 ---
@@ -555,12 +556,13 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Broadcast `GAME_EVENT` to room
 
 #### World system
-- [ ] Seed starting world: 3 locations (town, dungeon entrance, wilderness)
-- [ ] Add `GET /api/campaigns/:id/world` — return locations, connections, state
-- [ ] Build location component — show name, description, present NPCs
-- [ ] Allow movement between connected locations (server validates, updates character position in world_state)
-- [ ] World state changes persist — if a location is "discovered", it stays discovered
-- [ ] Add `WORLD_UPDATE` WebSocket broadcast on state change
+- [x] Seed starting world: 3 locations (town, dungeon entrance, wilderness)
+- [x] Add `GET /api/campaigns/:id/world` — return locations, connections, state
+- [x] Build location component — show name, type, description, and lore
+- [ ] Show present NPCs in the location component
+- [x] Allow movement between connected locations (server validates, updates character position in world_state)
+- [x] World state changes persist — if a location is "discovered", it stays discovered
+- [x] Add `WORLD_UPDATE` WebSocket broadcast on state change
 
 #### Inventory system
 - [ ] Seed item catalog (20 starter items: weapons, armor, potions, misc)
@@ -699,6 +701,7 @@ POST   /api/campaigns/join               # join via invite code
 GET    /api/campaigns/:id                # get campaign details
 GET    /api/campaigns/:id/members        # list campaign members and linked characters
 GET    /api/campaigns/:id/events         # recent event log catch-up
+GET    /api/campaigns/:id/world          # locations, connections, and campaign world state
 
 POST   /api/characters                   # create character
 GET    /api/characters/:id               # retrieve character details
@@ -709,7 +712,6 @@ PATCH  /api/characters/:id               # server-only mutations
 
 GET    /api/campaigns/:id/quests
 GET    /api/campaigns/:id/quests/:questId
-GET    /api/campaigns/:id/world          # locations, factions, NPCs
 ```
 
 All mutation endpoints require auth middleware. Character stat updates are server-internal only — no public PATCH route for HP, gold, or inventory.
@@ -753,4 +755,4 @@ VITE_SUPABASE_ANON_KEY=...
 
 ---
 
-*brain.md — last updated: 2026-06-07 websocket/campaign/action update*
+*brain.md — last updated: 2026-06-07 websocket/campaign/world update*

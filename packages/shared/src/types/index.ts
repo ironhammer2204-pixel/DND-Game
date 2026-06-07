@@ -203,6 +203,7 @@ export interface ClientMessageMap {
   ACTION_SUBMIT: {
     type: "exploration" | "skill_check" | "npc_interaction" | "other";
     text: string;
+    target_location_id?: string;
   };
   DICE_REQUEST: {
     dice_type: string; // e.g., 'd20'
