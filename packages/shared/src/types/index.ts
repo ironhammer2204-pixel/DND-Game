@@ -733,6 +733,7 @@ export interface ServerMessageMap {
     actor_name?: string;
     payload: Record<string, any>;
     timestamp: string;
+    ai_narration?: string | null;
   };
   AI_NARRATION: {
     event_id: string;

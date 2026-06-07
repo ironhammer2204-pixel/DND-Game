@@ -135,6 +135,9 @@ async function saveNarration(
   narration: string,
   campaignId: string
 ): Promise<void> {
+  if (!campaignId) {
+    console.error("[dmService] saveNarration called without campaignId — narration saved to DB but will not broadcast");
+  }
   await pool.query(
     `UPDATE event_log SET ai_narration = $1 WHERE id = $2`,
     [narration, eventLogId]

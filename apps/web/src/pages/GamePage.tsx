@@ -794,20 +794,29 @@ export function GamePage() {
               <div className="location-hud__connections">
                 <span className="location-hud__connections-title">Travel paths:</span>
                 <div className="location-hud__connections-list">
-                  {currentLocation.connected_locations.map((connId) => {
-                    const connLoc = locations.find((l) => l.id === connId);
-                    if (!connLoc) return null;
-                    return (
-                      <button
-                        key={connId}
-                        className="btn btn-ghost location-hud__travel-btn"
-                        onClick={() => handleTravel(connId)}
-                        disabled={wsStatus !== "connected"}
-                      >
-                        📍 {connLoc.name}
-                      </button>
+                  {(() => {
+                    const discoveredIds: string[] =
+                      activeCampaign?.world_state?.discovered_location_ids ?? [];
+                    const visibleConnections = currentLocation.connected_locations.filter(
+                      (connId) =>
+                        // Show if discovered, OR if no discovered list exists yet (new campaign)
+                        discoveredIds.length === 0 || discoveredIds.includes(connId)
                     );
-                  })}
+                    return visibleConnections.map((connId) => {
+                      const connLoc = locations.find((l) => l.id === connId);
+                      if (!connLoc) return null;
+                      return (
+                        <button
+                          key={connId}
+                          className="btn btn-ghost location-hud__travel-btn"
+                          onClick={() => handleTravel(connId)}
+                          disabled={wsStatus !== "connected"}
+                        >
+                          📍 {connLoc.name}
+                        </button>
+                      );
+                    });
+                  })()}
                   {currentLocation.connected_locations.length === 0 && (
                     <span className="location-hud__no-connections">No connected paths found.</span>
                   )}

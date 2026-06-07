@@ -331,12 +331,29 @@ export async function processCombatAction(
     const locationId = await getCampaignLocationId(client, campaignId);
     const location = locationId ? await getLocationContext(client, locationId) : null;
     const nemesis = await getActiveNemesisContext(client, campaignId);
-    
+
     if (location) {
-      dmService.enqueueCombatStart(pool, encounter.id, campaignId, {
+      // Insert a real event_log row first so saveNarration can UPDATE it by UUID.
+      // encounter.id is a combat_encounters UUID, NOT an event_log UUID — passing it
+      // caused the UPDATE to silently hit 0 rows.
+      const narrationLogRes = await pool.query(
+        `INSERT INTO public.event_log (campaign_id, type, payload)
+         VALUES ($1, 'combat', $2) RETURNING id`,
+        [
+          campaignId,
+          JSON.stringify({
+            action_type: "combat_round",
+            actor: activeParticipant.name,
+            turn_index: encounter.current_turn_index,
+          }),
+        ]
+      );
+      const narrationEventId = narrationLogRes.rows[0].id;
+
+      dmService.enqueueCombatRound(pool, narrationEventId, campaignId, {
         party: encounter.participants
-          .filter(p => p.type === "player")
-          .map(p => ({
+          .filter((p) => p.type === "player")
+          .map((p) => ({
             name: p.name,
             race: "human",
             class_name: "fighter",
@@ -344,12 +361,13 @@ export async function processCombatAction(
             hp_max: p.hp_max,
           })),
         location,
-        npcs: [],
         nemesis,
-        enemyNames: encounter.participants
-          .filter(p => p.type === "enemy")
-          .map(p => p.name),
-        initiativeOrder: encounter.turn_order.map(p => p.name),
+        roundNumber: encounter.current_turn_index + 1,
+        roundOutcomes: [
+          targetId
+            ? `${activeParticipant.name} used ${actionType} against ${encounter.participants.find((p) => p.id === targetId)?.name ?? "an enemy"}`
+            : `${activeParticipant.name} used ${actionType}`,
+        ],
       });
     }
   }

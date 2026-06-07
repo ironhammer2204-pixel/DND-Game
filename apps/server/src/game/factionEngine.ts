@@ -1033,9 +1033,14 @@ export async function updatePlayerReputation(client: PoolClient | Pool, campaign
             );
 
             const promoNarrative = `THREAT DETECTED! ${candidateNpc.name} from the ${factionName} has been assigned to hunt down ${charName}!`;
-            await logEvent(client, campaignId, "exploration", { text: promoNarrative });
+            // logEvent inserts to event_log and returns the real UUID — use it for the broadcast
+            const promoEventId = await logEvent(client, campaignId, "exploration", {
+              action_type: "nemesis_promoted",
+              text: promoNarrative,
+              actor_name: factionName,
+            });
             RoomManager.broadcastToRoom(campaignId, "GAME_EVENT", {
-              id: `promo-${Date.now()}`,
+              id: promoEventId,
               type: "exploration",
               actor_name: factionName,
               payload: { text: promoNarrative },

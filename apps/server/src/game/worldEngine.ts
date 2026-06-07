@@ -19,6 +19,7 @@ import {
   recordNemesisHistory 
 } from "./nemesisEngine.js";
 import { runFactionCycle } from "./factionEngine.js";
+import { tickNpcAgendas } from "./npcAgendaEngine.js";
 
 // Helper to convert DB row to Nemesis matching nemesisEngine format
 function rowToNemesis(row: any): Nemesis {
@@ -248,8 +249,8 @@ export async function tickFactionPressure(
         `INSERT INTO public.npc_action_log (campaign_id, npc_id, action_type, summary)
          VALUES ($1, $2, 'faction_escalation', $3) RETURNING id`,
         [
-          campaignId, 
-          "00000000-0000-0000-0000-000000000000", // System UUID
+          campaignId,
+          null, // System event — no specific NPC
           `The ${faction.name} faction has expanded their sphere of influence. Assassination squads are active.`
         ]
       );
@@ -269,54 +270,9 @@ export async function tickFactionPressure(
 
 /**
  * 3. Tick NPC Agendas
+ * Canonical implementation lives in npcAgendaEngine.ts — imported above.
+ * This local duplicate has been removed to prevent double-ticking.
  */
-export async function tickNpcAgendas(
-  client: PoolClient | Pool,
-  campaignId: string
-): Promise<void> {
-  const npcsRes = await client.query(
-    "SELECT id, name, role, location_id, urgency, power_level, agenda_state FROM public.npcs WHERE campaign_id = $1 AND is_alive = true",
-    [campaignId]
-  );
-  if (npcsRes.rows.length === 0) return;
-
-  for (const npc of npcsRes.rows) {
-    const agendaState = npc.agenda_state || {};
-    const currentProgress = Number(agendaState.progress || 0);
-    const newProgress = currentProgress + 10 * npc.urgency;
-
-    if (newProgress >= 100) {
-      // Resolve Agenda Goal
-      const summary = `${npc.name} completed their short-term goal: "${npc.short_term_goal || "Unknown Agenda"}".`;
-      
-      await client.query(
-        "INSERT INTO public.npc_action_log (campaign_id, npc_id, action_type, summary) VALUES ($1, $2, 'agenda_resolution', $3)",
-        [campaignId, npc.id, "agenda_complete", summary]
-      );
-
-      // Generate a new rumour
-      const rumourText = `Overheard in a tavern: ${npc.name} has recently succeeded in their plot to ${npc.short_term_goal || "advance their agendas"}.`;
-      await client.query(
-        "INSERT INTO public.rumours (campaign_id, text, source_npc_id) VALUES ($1, $2, $3)",
-        [campaignId, rumourText, npc.id]
-      );
-
-      // Reset NPC agenda state with new procedural template goal
-      const nextGoal = NPC_TEMPLATES.find(t => t.role === npc.role)?.short_term_goal || "Audit local stocks";
-      await client.query(
-        `UPDATE public.npcs
-         SET short_term_goal = $1, agenda_state = $2
-         WHERE id = $3`,
-        [nextGoal, JSON.stringify({ progress: 0, completed_count: (agendaState.completed_count || 0) + 1 }), npc.id]
-      );
-    } else {
-      await client.query(
-        "UPDATE public.npcs SET agenda_state = $1 WHERE id = $2",
-        [JSON.stringify({ ...agendaState, progress: newProgress }), npc.id]
-      );
-    }
-  }
-}
 
 /**
  * 4. Check Location Unlocks
@@ -513,7 +469,7 @@ export async function checkNpcSpawns(
 
       await client.query(
         "INSERT INTO public.npc_action_log (campaign_id, npc_id, action_type, summary) VALUES ($1, $2, 'spawn', $3)",
-        [campaignId, "00000000-0000-0000-0000-000000000000", `${name} arrived at ${loc.name}.`]
+        [campaignId, null, `${name} arrived at ${loc.name}.`]
       );
     }
   }

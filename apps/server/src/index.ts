@@ -16,6 +16,7 @@ import { authMiddleware, AuthenticatedRequest } from "./middleware/auth";
 import { authenticateSocket, handleWSMessage } from "./websocket/eventHandlers";
 import { RoomManager } from "./websocket/roomManager";
 import { runBalancingCycle } from "./game/balancingEngine";
+import { narrationEmitter } from "./ai/narrationEmitter";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -69,6 +70,22 @@ app.get("/health/db", async (_req, res) => {
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
+
+// Wire AI narration broadcast. saveNarration() in dmService emits this event
+// after every Groq response. Without this listener, narrations save to DB but
+// never reach connected clients. The try/catch prevents a send() error on a
+// closed socket from bringing down the whole process.
+narrationEmitter.on("narration", ({ campaignId, eventLogId, narration }) => {
+  try {
+    RoomManager.broadcastToRoom(campaignId, "AI_NARRATION", {
+      event_id: eventLogId,
+      text: narration,
+      is_complete: true,
+    });
+  } catch (err) {
+    console.error("[narration] broadcast failed for campaign", campaignId, err);
+  }
+});
 
 wss.on("connection", async (ws, req) => {
   const url = new URL(req.url || "", "http://localhost");

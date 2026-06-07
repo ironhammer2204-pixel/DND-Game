@@ -34,7 +34,8 @@ export async function authenticateSocket(token: string): Promise<{ userId: strin
 
 async function sendRecentEvents(ws: WebSocket, campaignId: string): Promise<void> {
   const eventsRes = await pool.query(
-    `SELECT e.id, e.type, e.payload, e.created_at, COALESCE(c.name, u.username) AS actor_name
+    `SELECT e.id, e.type, e.payload, e.created_at, e.ai_narration,
+            COALESCE(c.name, u.username) AS actor_name
      FROM public.event_log e
      LEFT JOIN public.characters c ON c.id = e.actor_id
      LEFT JOIN public.users u ON u.id = c.user_id
@@ -51,6 +52,7 @@ async function sendRecentEvents(ws: WebSocket, campaignId: string): Promise<void
       actor_name: event.actor_name || undefined,
       payload: event.payload,
       timestamp: event.created_at,
+      ai_narration: event.ai_narration ?? undefined,
     });
   }
 }
@@ -638,6 +640,7 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
         break;
       }
 
+<<<<<<< HEAD
       // -----------------------------------------------------------------------
       // Encyclopedia: GRANT_KNOWLEDGE — DM grants a character knowledge of entry
       // -----------------------------------------------------------------------
@@ -759,6 +762,74 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           payload: { message: "Balance cycle started. Dashboard will update shortly." },
           timestamp: new Date().toISOString(),
         });
+        break;
+      }
+
+      case "UPDATE_CONDITIONS": {
+        const participant = RoomManager.getParticipantBySocket(ws);
+        if (!participant) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Not joined in any campaign room",
+          });
+        }
+
+        // DM only
+        const dmCheck = await pool.query(
+          "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+          [participant.campaignId, user.userId]
+        );
+        if (dmCheck.rows[0]?.role !== "dm") {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "UNAUTHORIZED",
+            message: "Only the DM can toggle conditions.",
+          });
+        }
+
+        const msg = message as ClientWSMessage<"UPDATE_CONDITIONS">;
+        const { participant_id, condition, action } = msg.payload;
+
+        // Load active encounter
+        const encounter = await getActiveEncounter(pool, participant.campaignId);
+        if (!encounter) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "NOT_FOUND",
+            message: "No active combat encounter.",
+          });
+        }
+
+        // Find and mutate participant in participants array
+        const target = encounter.participants.find((p) => p.id === participant_id);
+        if (!target) {
+          return RoomManager.sendToParticipant(ws, "ERROR", {
+            code: "NOT_FOUND",
+            message: "Participant not found in encounter.",
+          });
+        }
+
+        if (action === "add" && !target.conditions.includes(condition)) {
+          target.conditions.push(condition);
+        } else if (action === "remove") {
+          target.conditions = target.conditions.filter((c) => c !== condition);
+        }
+
+        // Mirror the change into turn_order (participant may appear in both arrays)
+        const turnTarget = encounter.turn_order.find((p) => p.id === participant_id);
+        if (turnTarget) {
+          turnTarget.conditions = target.conditions;
+        }
+
+        // Persist and broadcast
+        await pool.query(
+          "UPDATE public.combat_encounters SET participants = $1, turn_order = $2 WHERE id = $3",
+          [
+            JSON.stringify(encounter.participants),
+            JSON.stringify(encounter.turn_order),
+            encounter.id,
+          ]
+        );
+
+        RoomManager.broadcastToRoom(participant.campaignId, "COMBAT_UPDATE", { encounter });
         break;
       }
 

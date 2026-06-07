@@ -53,6 +53,9 @@ interface GameState {
   factionActions: FactionAction[];
   factionEnginePaused: boolean;
 
+  // AI narration buffer: handles the race where AI_NARRATION arrives before GAME_EVENT
+  pendingNarrations: Record<string, string>;
+
   setCampaigns: (campaigns: LobbyCampaign[]) => void;
   setActiveCampaign: (campaign: LobbyCampaign | null, role: "player" | "dm" | null) => void;
   setPartyCharacters: (chars: Character[]) => void;
@@ -96,6 +99,7 @@ const initialState = {
   reputations: [] as PlayerFactionReputation[],
   factionActions: [] as FactionAction[],
   factionEnginePaused: false,
+  pendingNarrations: {} as Record<string, string>,
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -110,7 +114,17 @@ export const useGameStore = create<GameState>((set, get) => ({
   setMyCharacter: (char) => set({ myCharacter: char }),
 
   appendEvent: (event) =>
-    set((state) => ({ eventLogs: [...state.eventLogs, event] })),
+    set((state) => {
+      // If a narration arrived before this event, attach it now
+      const pending = state.pendingNarrations[event.id];
+      const enriched = pending ? { ...event, ai_narration: pending } : event;
+      const next = { ...state.pendingNarrations };
+      if (pending) delete next[event.id];
+      return {
+        eventLogs: [...state.eventLogs, enriched],
+        pendingNarrations: next,
+      };
+    }),
 
   clearEvents: () => set({ eventLogs: [] }),
 
@@ -181,19 +195,42 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
       case "AI_NARRATION": {
         const payload = message.payload as ServerMessageMap["AI_NARRATION"];
-        set((state) => ({
-          eventLogs: state.eventLogs.map((evt) =>
-            evt.id === payload.event_id
-              ? { ...evt, ai_narration: payload.text }
-              : evt
-          ),
-        }));
+        set((state) => {
+          const eventExists = state.eventLogs.some((evt) => evt.id === payload.event_id);
+          if (eventExists) {
+            // Event already in state — patch it directly
+            return {
+              eventLogs: state.eventLogs.map((evt) =>
+                evt.id === payload.event_id
+                  ? { ...evt, ai_narration: payload.text }
+                  : evt
+              ),
+            };
+          } else {
+            // Event hasn't arrived yet — buffer the narration
+            return {
+              pendingNarrations: {
+                ...state.pendingNarrations,
+                [payload.event_id]: payload.text,
+              },
+            };
+          }
+        });
         break;
       }
 
-        case "GAME_EVENT": {
+      case "GAME_EVENT": {
         const gameEvent = message.payload as GameEvent;
-        appendEvent(gameEvent);
+        // Check for buffered narration arriving out of order
+        const pending = get().pendingNarrations[gameEvent.id];
+        appendEvent(pending ? { ...gameEvent, ai_narration: pending } : gameEvent);
+        if (pending) {
+          set((state) => {
+            const next = { ...state.pendingNarrations };
+            delete next[gameEvent.id];
+            return { pendingNarrations: next };
+          });
+        }
         break;
       }
       case "COMBAT_UPDATE": {

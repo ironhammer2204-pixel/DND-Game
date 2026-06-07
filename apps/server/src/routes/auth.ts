@@ -57,12 +57,7 @@ router.post("/register", async (req, res) => {
     }
 
     const userId = data.user.id;
-
-    // 2. Insert user profile into public.users
-    await pool.query(
-      "INSERT INTO public.users (id, email, username) VALUES ($1, $2, $3)",
-      [userId, email, username]
-    );
+    // The public.users row is automatically created by the Supabase auth.users database trigger.
 
     res.status(201).json({
       message: "User registered successfully",
@@ -145,6 +140,65 @@ router.post("/logout", async (req, res) => {
   } catch (error) {
     console.error("Logout error:", error);
     res.status(500).json({ error: "Internal server error during logout" });
+  }
+});
+
+// GET /api/auth/google
+router.get("/google", async (req, res) => {
+  try {
+    const { data, error } = await supabaseAuth.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${req.headers.origin || "http://localhost:5173"}/auth/callback`,
+      },
+    });
+
+    if (error || !data.url) {
+      return res.status(500).json({ error: error?.message || "Failed to initialize Google Auth" });
+    }
+
+    res.redirect(data.url);
+  } catch (error) {
+    console.error("Google Auth error:", error);
+    res.status(500).json({ error: "Internal server error during Google Auth" });
+  }
+});
+
+// GET /api/auth/me
+router.get("/me", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+
+    if (!token) {
+      return res.status(401).json({ error: "Missing bearer token" });
+    }
+
+    const userSupabase = createUserSupabaseClient(token);
+    const { data: { user }, error } = await userSupabase.auth.getUser();
+
+    if (error || !user) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    const profileRes = await pool.query(
+      "SELECT username, avatar_url FROM public.users WHERE id = $1",
+      [user.id]
+    );
+
+    const profile = profileRes.rows[0];
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: profile?.username || "Unknown",
+        avatar_url: profile?.avatar_url || null,
+      },
+    });
+  } catch (error) {
+    console.error("Auth me error:", error);
+    res.status(500).json({ error: "Internal server error during me fetch" });
   }
 });
 
