@@ -1,8 +1,8 @@
 import { Pool, PoolClient } from "pg";
 import { pool } from "../db/client";
 import { ServerMessageMap } from "@dnd/shared";
-import { runWorldHeartbeat } from "./nemesisEngine";
-import { dmService } from "../ai/dmService";
+import { runWorldHeartbeat, recordBehaviourEvent } from "./worldEngine.js";
+import { dmService } from "../ai/dmService.js";
 import { buildCampaignSnapshot, getLocationContext } from "../ai/contextBuilder";
 
 type ActionType = "exploration" | "skill_check" | "npc_interaction" | "other";
@@ -69,6 +69,16 @@ async function processSkillCheckAction(
     "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'skill_check', $2, $3) RETURNING id, created_at",
     [participant.campaignId, participant.characterId, JSON.stringify(payload)]
   );
+
+  let checkTags: string[] = [];
+  if (["stealth", "deception", "sleightOfHand"].includes(chosenSkill)) {
+    checkTags.push("shadow");
+  } else if (["investigation", "arcana", "nature", "history", "religion"].includes(chosenSkill)) {
+    checkTags.push("curiosity");
+  }
+  if (checkTags.length > 0 && participant.characterId) {
+    await recordBehaviourEvent(client, participant.campaignId, participant.characterId, "skill_check", checkTags, 1);
+  }
 
   if (dmService.isEnabled() && logRes.rows[0].id) {
     const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
@@ -291,6 +301,10 @@ export async function processPlayerAction(
     );
     await runWorldHeartbeat(client, participant.campaignId, isRestAction);
     await client.query("COMMIT");
+
+    if (text && participant.characterId) {
+      dmService.enqueueIntentClassification(pool, participant.characterId, participant.campaignId, text);
+    }
 
     if (dmService.isEnabled() && logRes.rows[0].id) {
       const snapshot = await buildCampaignSnapshot(client, participant.campaignId);

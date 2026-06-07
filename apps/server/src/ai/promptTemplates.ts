@@ -75,10 +75,11 @@ export function buildLocationBlock(location: LocationContext): string {
 /** Lists the NPCs currently present and their disposition. */
 export function buildNpcBlock(npcs: NpcContext[]): string {
   if (!npcs.length) return "";
-  const lines = npcs.map(
-    n =>
-      `${n.name} (${n.archetype}): ${n.relationship_value > 30 ? "friendly" : n.relationship_value < -30 ? "hostile" : "neutral"}`
-  );
+  const lines = npcs.map(n => {
+    const trust = n.relationship_value > 30 ? "friendly" : n.relationship_value < -30 ? "hostile" : "neutral";
+    const disposition = n.disposition_hint && n.disposition_hint !== "neutral" ? ` (${n.disposition_hint})` : "";
+    return `${n.name} (${n.archetype}): ${trust}${disposition}`;
+  });
   return `NPCS PRESENT: ${lines.join("; ")}.`;
 }
 
@@ -271,6 +272,7 @@ export interface NpcContext {
   name: string;
   archetype: string;
   relationship_value: number; // -100 to 100
+  disposition_hint?: string;
 }
 
 export interface QuestContext {

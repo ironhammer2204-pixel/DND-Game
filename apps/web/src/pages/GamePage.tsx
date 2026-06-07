@@ -620,12 +620,28 @@ export function GamePage() {
                         {currentLocationNpcs.length === 0 ? (
                           <div className="npc-popover__empty">No NPCs here.</div>
                         ) : (
-                          currentLocationNpcs.map((npc) => (
-                            <div key={npc.id} className="npc-popover__item">
-                              <span className="npc-popover__name">{npc.name}</span>
-                              {npc.role && <span className="npc-popover__role">({npc.role})</span>}
-                            </div>
-                          ))
+                          currentLocationNpcs.map((npc) => {
+                            let relStatus = "Neutral";
+                            const score = npc.relationship_score || 0;
+                            if (score > 80) relStatus = "Trusted";
+                            else if (score > 30) relStatus = "Friendly";
+                            else if (score < -30) relStatus = "Hostile";
+
+                            return (
+                              <div key={npc.id} className="npc-popover__item" style={{ marginBottom: "0.5rem" }}>
+                                <div>
+                                  <span className="npc-popover__name" style={{ fontWeight: "bold" }}>{npc.name}</span>
+                                  {npc.role && <span className="npc-popover__role" style={{ color: "#888", marginLeft: "4px" }}>({npc.role})</span>}
+                                </div>
+                                <div style={{ fontSize: "0.85rem", marginTop: "2px" }}>
+                                  <strong>Relationship:</strong> {relStatus} ({score})
+                                </div>
+                                <div style={{ fontSize: "0.85rem", fontStyle: "italic", color: "#bbb", marginTop: "2px" }}>
+                                  "{npc.party_perception || "Neutral"}"
+                                </div>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>

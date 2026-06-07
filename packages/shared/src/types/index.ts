@@ -105,6 +105,8 @@ export interface NPC {
   known_info: string[];
   memory_log: NPCInteraction[];
   base_stats: Record<string, any>;
+  party_perception?: string;
+  relationship_score?: number;
 }
 
 export interface QuestObjective {

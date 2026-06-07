@@ -127,4 +127,7 @@ export const SKILL_TO_ATTRIBUTE: Record<SkillName, AttributeName> = {
 };
 
 export * from "./monsters";
+export * from "./npcTemplates";
+export * from "./locationTemplates";
+export * from "./questTemplates";
 

@@ -324,7 +324,7 @@ export const dmService = {
   },
 
   enqueueNemesisDefeated(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: NemesisDefeatedContext
@@ -333,6 +333,49 @@ export const dmService = {
       const prompt = buildNemesisDefeatedPrompt(ctx);
       const narration = await callGroq(prompt);
       await saveNarration(pool, eventLogId, narration, campaignId);
+    });
+  },
+
+  enqueueIntentClassification(
+    pool: Pool,
+    characterId: string,
+    campaignId: string,
+    actionText: string
+  ): void {
+    if (!this.isEnabled()) return;
+    enqueueJob(async () => {
+      try {
+        const prompt = `Classify the following RPG character action text into D&D behaviour tags (values 0-5):
+Action: "${actionText}"
+Available tags: mercy, cruelty, greed, loyalty, betrayal, curiosity, cowardice, recklessness, shadow, forbidden, reverence, chaos.
+Respond ONLY with a valid JSON object mapping tag names to integer scores. Example: {"shadow": 3, "betrayal": 1}. If no tags apply, return {}. Do not include markdown formatting or extra text.`;
+        const client = getGroqClient();
+        const completion = await client.chat.completions.create({
+          model: GROQ_MODEL,
+          max_tokens: 64,
+          temperature: 0.1,
+          messages: [
+            { role: "system", content: "You are a behaviour classification engine. Respond with a JSON object only." },
+            { role: "user", content: prompt }
+          ]
+        });
+        const content = completion.choices[0]?.message?.content?.trim() || "{}";
+        // Clean JSON formatting if AI wrapped in markdown code blocks
+        const cleaned = content.replace(/^```json/, "").replace(/```$/, "").trim();
+        const parsed = JSON.parse(cleaned);
+        
+        // Record tags in database
+        const tags = Object.keys(parsed).filter(k => parsed[k] > 0);
+        if (tags.length > 0) {
+          const { recordBehaviourEvent } = await import("../game/worldEngine.js");
+          for (const tag of tags) {
+            const score = Math.min(5, Math.max(1, Number(parsed[tag])));
+            await recordBehaviourEvent(pool, campaignId, characterId, "text_intent", [tag], score);
+          }
+        }
+      } catch (err) {
+        console.error("[dmService] Intent classification failed:", err);
+      }
     });
   },
 

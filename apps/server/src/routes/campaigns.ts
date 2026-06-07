@@ -611,14 +611,41 @@ router.get("/:id/locations/:locationId/npcs", authMiddleware, async (req: Authen
     }
 
     const npcsRes = await pool.query(
-      `SELECT id, campaign_id, name, role, location_id, is_alive, relationship_map, base_stats
+      `SELECT id, campaign_id, name, role, location_id, is_alive, relationship_map, base_stats, agenda_state
        FROM public.npcs
        WHERE campaign_id = $1 AND location_id = $2 AND is_alive = true
        ORDER BY name ASC`,
       [campaignId, locationId]
     );
 
-    res.json({ npcs: npcsRes.rows });
+    const mappedNpcs = npcsRes.rows.map((row) => {
+      const map = row.relationship_map || {};
+      const values = Object.values(map) as number[];
+      const avgTrust = values.length > 0
+        ? values.reduce((sum, val) => sum + val, 0) / values.length
+        : 0;
+
+      let perception = "neutral";
+      const state = row.agenda_state || {};
+      if (state.blocked_reason) {
+        perception = "evasive, changes subject when pressed";
+      } else if (state.ticks_at_current_step > 3) {
+        perception = "appears frustrated, distracted";
+      } else if (state.last_action === "seek_ally") {
+        perception = "seems to be looking for someone";
+      } else if (state.last_action === "spread_rumour") {
+        perception = "unusually talkative, asking odd questions";
+      }
+
+      return {
+        ...row,
+        agenda_state: undefined, // remove from payload
+        relationship_score: avgTrust,
+        party_perception: perception,
+      };
+    });
+
+    res.json({ npcs: mappedNpcs });
   } catch (error) {
     console.error("Get location NPCs error:", error);
     res.status(500).json({ error: "Internal server error fetching NPCs" });

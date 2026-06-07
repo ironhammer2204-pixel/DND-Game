@@ -108,9 +108,10 @@ export async function getNpcsAtLocation(
   const { rows } = await client.query<{
     name: string;
     archetype: string;
-    relationship_value: number | null;
+    relationship_map: Record<string, number>;
+    agenda_state: any;
   }>(
-    `SELECT n.name, n.archetype, n.relationship_value
+    `SELECT n.name, n.archetype, n.relationship_map, n.agenda_state
      FROM npcs n
      WHERE n.location_id = $1
        AND n.campaign_id = $2
@@ -118,11 +119,34 @@ export async function getNpcsAtLocation(
      ORDER BY n.name`,
     [locationId, campaignId]
   );
-  return rows.map(r => ({
-    name: r.name,
-    archetype: r.archetype,
-    relationship_value: r.relationship_value ?? 0,
-  }));
+  return rows.map(r => {
+    // Calculate average trust
+    const map = r.relationship_map || {};
+    const values = Object.values(map);
+    const avgTrust = values.length > 0
+      ? values.reduce((sum, val) => sum + val, 0) / values.length
+      : 0;
+
+    // Determine disposition hint
+    let hint = "neutral";
+    const state = r.agenda_state || {};
+    if (state.blocked_reason) {
+      hint = "evasive, changes subject when pressed";
+    } else if (state.ticks_at_current_step > 3) {
+      hint = "appears frustrated, distracted";
+    } else if (state.last_action === "seek_ally") {
+      hint = "seems to be looking for someone";
+    } else if (state.last_action === "spread_rumour") {
+      hint = "unusually talkative, asking odd questions";
+    }
+
+    return {
+      name: r.name,
+      archetype: r.archetype,
+      relationship_value: avgTrust,
+      disposition_hint: hint,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

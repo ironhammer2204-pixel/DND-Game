@@ -10,8 +10,8 @@ import {
   assignSuccessor,
   evaluateCombatForNemesisPromotion,
   handleNemesisQuestIntegration,
-  runWorldHeartbeat,
 } from "../nemesisEngine";
+import { runWorldHeartbeat } from "../worldEngine";
 import { CombatParticipant, CombatEncounter, Nemesis, Faction, Quest } from "@dnd/shared";
 
 // A mock Pool/PoolClient implementation for testing
