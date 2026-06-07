@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: dnd-game-server
+    env: node
+    buildCommand: npm install && npx turbo run build --filter=server
+    startCommand: npm run start --workspace=apps/server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false

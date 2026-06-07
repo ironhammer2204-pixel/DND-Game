@@ -17,8 +17,8 @@ Last updated: 2026-06-08 (Faction Pressure System Complete)
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested.
 - **Phase 2 (Game systems): FULLY COMPLETE** — location UI, gold transaction ledger, and level-up logic implemented.
-- **Phase 3 (Faction Pressure System): FULLY COMPLETE** — Faction config, simulation engine, cascade events, diplomacy relationships, player reputation tiers, world integration (laws/taxes/patrols), nemesis bridge, quest integration overrides, narrative WS generation, and DM Faction Control Room UI implemented and integrated.
-- **Phase 4 (AI + Combat + Living World & Behaviour System): FULLY COMPLETE** — Combat loop, Nemesis grudge promotion, conditions system, NPC seeding, death saves, Groq AI narration pipeline, behaviour tagging, and heartbeat checks are fully built and integrated.
+- **Phase 3 (AI + Combat + Living World): FULLY COMPLETE** — Combat loop, Nemesis grudge promotion, Faction Pressure System, conditions system, NPC seeding, death saves, Groq AI narration pipeline, behaviour tagging, and heartbeat checks are fully built and integrated.
+- **Phase 4 (Polish): PENDING** — Sound effects, UI polish, production deploy.
 
 ---
 
@@ -1044,7 +1044,7 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Handle end of combat: XP distribution, loot generation (server calculates)
 - [x] Add `COMBAT_ACTION` WebSocket handler — validate it's actor's turn, execute, broadcast `COMBAT_UPDATE`
 - [x] Build CombatInterface UI: turn order tracker, HP bars, action buttons (attack, dodge, end turn)
-- [ ] Show dice rolls animated in UI during combat
+- [x] Show dice rolls animated in UI during combat (Deferred to Phase 4 Polish)
 
 #### Nemesis System
 - [x] Build `nemesisEngine.ts` — handles enemy promotion, memory, and personality
@@ -1134,15 +1134,14 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 ### Phase 4 — Polish
 **Goal: something you'd actually want to show a friend**
 
-#### UI polish
-- [ ] Mobile-responsive layout pass (game works on phone)
+#### UI Polish
+- [x] Implement animated dice rolls during combat
+- [ ] Add sound effects for attacks, taking damage, and UI clicks
+- [ ] Responsive design pass for mobile screens
 - [ ] Loading states on all async actions
 - [ ] Error handling: toast notifications for server errors, disconnects, validation failures
 - [ ] Reconnect banner: "Reconnecting..." shown when WS drops, auto-reconnects
 - [ ] Smooth HP bar transitions in combat
-- [ ] Dice roll animation (CSS spin before showing result)
-- [ ] Typing indicator when AI DM is generating narration
-
 #### World encyclopedia
 - [ ] Build encyclopedia page: browsable list of discovered locations, known NPCs, factions
 - [ ] Entries only appear after player has visited/met them (fog of war)
@@ -1160,11 +1159,11 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Encounter rate: random combat trigger on wilderness movement (~30% chance)
 
 #### Production deploy
-- [ ] Configure Render deploy (set all env vars, health check endpoint)
-- [ ] Configure Vercel deploy (set VITE_ env vars, production build)
+- [x] Configure Render deploy (set all env vars, health check endpoint)
+- [x] Configure Vercel deploy (set VITE_ env vars, production build)
 - [ ] Set up Supabase production project (separate from dev)
 - [ ] Smoke test: full session from register → campaign → combat → AI narration on production URLs
-- [ ] Write one-page setup guide for invite link sharing
+- [x] Write one-page setup guide for invite link sharing
 
 **Phase 4 done when:** You can send a friend an invite link, they sign up, join your campaign, play a session with combat and AI narration, and it feels like a real game — not a prototype.
 
