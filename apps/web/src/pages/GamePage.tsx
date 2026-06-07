@@ -879,7 +879,6 @@ export function GamePage() {
                 campaignId={activeCampaign.id}
                 token={token ?? ""}
                 isDM={activeRole === "dm"}
-                characterId={myCharacter?.id}
               />
             </div>
           ) : null}

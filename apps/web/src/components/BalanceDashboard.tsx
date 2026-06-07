@@ -121,7 +121,12 @@ export function BalanceDashboard({ campaignId, token }: BalanceDashboardProps) {
     }
   }, [campaignId, apiFetch]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchAll();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchAll]);
 
   const handleRunCycle = async () => {
     setCycling(true);

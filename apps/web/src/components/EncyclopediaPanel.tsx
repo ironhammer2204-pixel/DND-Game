@@ -53,7 +53,6 @@ interface EncyclopediaPanelProps {
   campaignId: string;
   token: string;
   isDM: boolean;
-  characterId?: string;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -73,7 +72,7 @@ const RELIABILITY_COLOR = (r: number) => {
   return "#f87171";
 };
 
-export function EncyclopediaPanel({ campaignId, token, isDM, characterId }: EncyclopediaPanelProps) {
+export function EncyclopediaPanel({ campaignId, token, isDM }: EncyclopediaPanelProps) {
   const [tab, setTab] = useState<PanelTab>("entries");
   const [entries, setEntries] = useState<EncyclopediaEntry[]>([]);
   const [rumors, setRumors] = useState<Rumor[]>([]);
@@ -146,14 +145,20 @@ export function EncyclopediaPanel({ campaignId, token, isDM, characterId }: Ency
   }, [campaignId, apiFetch]);
 
   useEffect(() => {
-    if (tab === "entries") fetchEntries();
-    else if (tab === "rumors") fetchRumors();
-    else if (tab === "timeline") fetchEras();
-    else if (tab === "sessions") fetchSessions();
+    const timer = window.setTimeout(() => {
+      if (tab === "entries") fetchEntries();
+      else if (tab === "rumors") fetchRumors();
+      else if (tab === "timeline") fetchEras();
+      else if (tab === "sessions") fetchSessions();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [tab, fetchEntries, fetchRumors, fetchEras, fetchSessions]);
 
   useEffect(() => {
-    if (tab === "entries") fetchEntries();
+    const timer = window.setTimeout(() => {
+      if (tab === "entries") fetchEntries();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [category, tab, fetchEntries]);
 
   const handleSearch = async () => {

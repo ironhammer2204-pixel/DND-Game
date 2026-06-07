@@ -640,7 +640,6 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
         break;
       }
 
-<<<<<<< HEAD
       // -----------------------------------------------------------------------
       // Encyclopedia: GRANT_KNOWLEDGE — DM grants a character knowledge of entry
       // -----------------------------------------------------------------------
