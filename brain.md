@@ -4,6 +4,23 @@
 
 ---
 
+## Current Status
+
+Last updated: 2026-06-07
+
+- GitHub repo: `https://github.com/ironhammer2204-pixel/DND-Game`
+- Supabase project: `fvgpsqksclhyvaeveaus` (`DND-Game`)
+- `brain.md` is now the project source of truth and must be updated after every meaningful fix, feature, schema change, setup change, or architecture decision.
+- Initial Supabase project files exist under `supabase/`.
+- Initial remote migration `20260607123000_initial_game_schema.sql` has been pushed successfully.
+- Database baseline includes the 12 core tables, indexes, update trigger, RLS enabled on all tables, and baseline private-campaign RLS policies.
+- Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
+- Supabase config is aligned with the remote Postgres major version: `17`.
+- Local `supabase db reset` has not been verified yet because Docker was not running locally.
+- Monorepo app scaffolding has not started yet; coordinate `apps/` and `packages/` structure with the teammate starting monorepo work.
+
+---
+
 ## Stack
 
 | Layer | Technology | Provider | Cost |
@@ -407,11 +424,11 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Add `packages/shared/src/constants/` with Races, Classes, DiceTypes, Skills
 
 #### Supabase setup
-- [ ] Create Supabase project (free tier)
-- [ ] Run migration: create all 12 tables (see schema section)
-- [ ] Enable Row Level Security on all tables
-- [ ] Write RLS policies: users can only read/write their own campaign data
-- [ ] Enable Supabase Auth (email/password)
+- [x] Create Supabase project (free tier)
+- [x] Run migration: create all 12 tables (see schema section)
+- [x] Enable Row Level Security on all tables
+- [x] Write baseline RLS policies: users can only read/write their own campaign data
+- [x] Enable Supabase Auth (email/password)
 - [ ] Test DB connection from server with `pg` pool
 
 #### Express server (Render)
