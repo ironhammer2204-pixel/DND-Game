@@ -748,7 +748,8 @@ Respond with 2â€“4 paragraphs of narration only. No meta-commentary.
 - [x] Enable Row Level Security on all tables
 - [x] Write baseline RLS policies: users can only read/write their own campaign data
 - [x] Enable Supabase Auth (email/password)
-- [ ] Test DB connection from server with `pg` pool
+- [x] Test DB connection from server with `pg` pool
+
 
 #### Express server (Render)
 - [x] Init Express app with TypeScript
@@ -867,17 +868,17 @@ Respond with 2â€“4 paragraphs of narration only. No meta-commentary.
 **Goal: full sessions with AI narration, turn-based combat, living NPCs, and a world that remembers**
 
 #### Combat engine
-- [ ] Build `combatEngine.ts` with full turn-based logic
-- [ ] Initiative roll: d20 + DEX modifier for each participant, sorted descending
-- [ ] Attack roll: d20 + attack bonus vs target AC â€” hit or miss
-- [ ] Damage roll: weapon damage dice + STR/DEX modifier on hit
-- [ ] Apply damage to target HP in DB, check for death (HP â‰¤ 0)
-- [ ] Death saves: d20 on downed character's turn, 3 successes = stable, 3 fails = dead
-- [ ] Conditions: poisoned, stunned, paralysed â€” store in participant jsonb, apply mechanical effects
-- [ ] Enemy AI turn logic (code-based): pick nearest player, roll attack, apply damage
-- [ ] Handle end of combat: XP distribution, loot generation (server calculates)
-- [ ] Add `COMBAT_ACTION` WebSocket handler â€” validate it's actor's turn, execute, broadcast `COMBAT_UPDATE`
-- [ ] Build CombatInterface UI: turn order tracker, HP bars, action buttons (attack, dodge, use item)
+- [x] Build `combatEngine.ts` with full turn-based logic
+- [x] Initiative roll: d20 + DEX modifier for each participant, sorted descending
+- [x] Attack roll: d20 + attack bonus vs target AC — hit or miss
+- [x] Damage roll: weapon damage dice + STR/DEX modifier on hit
+- [x] Apply damage to target HP in DB, check for death (HP ≤ 0)
+- [x] Death saves: d20 on downed character's turn, 3 successes = stable, 3 fails = dead
+- [ ] Conditions: poisoned, stunned, paralysed — store in participant jsonb, apply mechanical effects
+- [x] Enemy AI turn logic (code-based): pick nearest player, roll attack, apply damage
+- [x] Handle end of combat: XP distribution, loot generation (server calculates)
+- [x] Add `COMBAT_ACTION` WebSocket handler — validate it's actor's turn, execute, broadcast `COMBAT_UPDATE`
+- [x] Build CombatInterface UI: turn order tracker, HP bars, action buttons (attack, dodge, end turn)
 - [ ] Show dice rolls animated in UI during combat
 
 #### Nemesis System
