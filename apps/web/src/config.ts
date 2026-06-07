@@ -35,7 +35,7 @@ export async function resolveApiUrl(): Promise<string> {
         },
       });
 
-      if (res.ok || res.status < 500) {
+      if (res.ok) {
         resolvedApiUrl = candidate;
         return candidate;
       }

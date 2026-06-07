@@ -228,4 +228,44 @@ router.get("/me", async (req, res) => {
   }
 });
 
+// POST /api/auth/exchange
+router.post("/exchange", async (req, res) => {
+  const code = typeof req.body.code === "string" ? req.body.code : "";
+
+  if (!code) {
+    return res.status(400).json({ error: "Missing authorization code" });
+  }
+
+  try {
+    const { data, error } = await supabaseAuth.auth.exchangeCodeForSession(code);
+
+    if (error || !data.session || !data.user) {
+      return res.status(400).json({
+        error: "oauth_exchange_failed",
+        message: error?.message || "Failed to exchange authorization code",
+      });
+    }
+
+    const profileRes = await pool.query(
+      "SELECT username, avatar_url FROM public.users WHERE id = $1",
+      [data.user.id]
+    );
+
+    const profile = profileRes.rows[0];
+
+    res.json({
+      session: data.session,
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        username: profile?.username || "Unknown",
+        avatar_url: profile?.avatar_url || null,
+      },
+    });
+  } catch (error) {
+    console.error("OAuth exchange error:", error);
+    res.status(500).json({ error: "Internal server error during OAuth exchange" });
+  }
+});
+
 export default router;

@@ -2,43 +2,72 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "../stores/authStore";
 import { resolveApiUrl } from "../config";
 
+interface AuthResponseUser {
+  id: string;
+  email: string;
+  username: string;
+  avatar_url?: string | null;
+}
+
 export function AuthCallback() {
   const { setSession } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function processCallback() {
-      // Supabase OAuth appends the token in the URL hash, e.g., #access_token=xyz&expires_in=...
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get("code");
       const hash = window.location.hash.substring(1);
       const params = new URLSearchParams(hash);
       const accessToken = params.get("access_token");
 
-      if (!accessToken) {
-        setError("No access token found in URL.");
-        // Redirect back to home after 2 seconds
-        setTimeout(() => window.location.replace("/"), 2000);
-        return;
-      }
-
       try {
         const apiUrl = await resolveApiUrl();
-        // Fetch the user profile from our backend
-        const res = await fetch(`${apiUrl}/api/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "ngrok-skip-browser-warning": "true",
-            "bypass-tunnel-reminder": "true"
-          },
-        });
+        let sessionToken = accessToken;
+        let userData: AuthResponseUser | null = null;
 
-        const data = await res.json();
-        
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to fetch user profile");
+        if (code) {
+          const res = await fetch(`${apiUrl}/api/auth/exchange`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "ngrok-skip-browser-warning": "true",
+              "bypass-tunnel-reminder": "true",
+            },
+            body: JSON.stringify({ code }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.message || data.error || "Failed to complete Google sign-in");
+          }
+
+          sessionToken = data.session?.access_token ?? null;
+          userData = data.user;
+        } else if (accessToken) {
+          const res = await fetch(`${apiUrl}/api/auth/me`, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "ngrok-skip-browser-warning": "true",
+              "bypass-tunnel-reminder": "true"
+            },
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Failed to fetch user profile");
+          }
+
+          userData = data.user;
+        } else {
+          throw new Error("No authorization code or access token found in URL.");
         }
 
-        // Set the session globally
-        setSession(accessToken, data.user);
+        if (!sessionToken || !userData) {
+          throw new Error("Google sign-in did not return a usable session.");
+        }
+
+        setSession(sessionToken, userData);
         
         // Clean the URL and redirect to the app
         window.location.replace("/");
