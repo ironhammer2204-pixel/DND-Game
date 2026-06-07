@@ -69,6 +69,9 @@ function App() {
   const [charClass, setCharClass] = useState<string>(CLASSES[0]);
   const [charError, setCharError] = useState("");
 
+  // Dice Roller State
+  const [diceModifier, setDiceModifier] = useState<number>(0);
+
   // WebSocket reference
   const [ws, setWs] = useState<WebSocket | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -403,7 +406,7 @@ function App() {
         payload: {
           dice_type: dice,
           context: "Quick Dice Roll",
-          modifier: 0,
+          modifier: diceModifier,
         },
       })
     );
@@ -613,11 +616,33 @@ function App() {
                 </p>
                 <div style={{ marginTop: "30px", borderTop: "1px solid var(--bg-panel)", paddingTop: "20px" }}>
                   <div className="sidebar-section-title">Quick Dice Rolls</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                    <button className="btn btn-gold" onClick={() => rollQuickDice("d20")}>Roll D20</button>
-                    <button className="btn btn-gold" onClick={() => rollQuickDice("d10")}>Roll D10</button>
-                    <button className="btn btn-gold" onClick={() => rollQuickDice("d8")}>Roll D8</button>
-                    <button className="btn btn-gold" onClick={() => rollQuickDice("d6")}>Roll D6</button>
+                  
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "15px" }}>
+                    <label style={{ fontSize: "0.85rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>Modifier:</label>
+                    <input
+                      type="number"
+                      className="input-field"
+                      style={{ width: "70px", padding: "4px 8px", textAlign: "center", margin: 0 }}
+                      value={diceModifier}
+                      onChange={(e) => setDiceModifier(parseInt(e.target.value, 10) || 0)}
+                    />
+                    <button 
+                      className="btn" 
+                      style={{ padding: "4px 8px", fontSize: "0.85rem" }} 
+                      onClick={() => setDiceModifier(0)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d4")}>D4</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d6")}>D6</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d8")}>D8</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d10")}>D10</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d12")}>D12</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d20")}>D20</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem", gridColumn: "span 2" }} onClick={() => rollQuickDice("d100")}>D100</button>
                   </div>
                 </div>
               </div>
@@ -677,6 +702,38 @@ function App() {
                       </div>
                     );
                   })}
+                </div>
+
+                <div style={{ marginTop: "20px", borderTop: "1px solid var(--bg-panel)", paddingTop: "15px" }}>
+                  <div className="sidebar-section-title">Quick Dice Rolls</div>
+                  
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "15px" }}>
+                    <label style={{ fontSize: "0.85rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>Modifier:</label>
+                    <input
+                      type="number"
+                      className="input-field"
+                      style={{ width: "70px", padding: "4px 8px", textAlign: "center", margin: 0 }}
+                      value={diceModifier}
+                      onChange={(e) => setDiceModifier(parseInt(e.target.value, 10) || 0)}
+                    />
+                    <button 
+                      className="btn" 
+                      style={{ padding: "4px 8px", fontSize: "0.85rem" }} 
+                      onClick={() => setDiceModifier(0)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "8px" }}>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d4")}>D4</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d6")}>D6</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d8")}>D8</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d10")}>D10</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d12")}>D12</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem" }} onClick={() => rollQuickDice("d20")}>D20</button>
+                    <button className="btn btn-gold" style={{ padding: "6px 0", fontSize: "0.85rem", gridColumn: "span 2" }} onClick={() => rollQuickDice("d100")}>D100</button>
+                  </div>
                 </div>
               </div>
             ) : (

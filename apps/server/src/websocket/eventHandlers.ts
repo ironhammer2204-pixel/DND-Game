@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { ClientWSMessage, ClientMessageType, Character } from "@dnd/shared";
 import { RoomManager } from "./roomManager";
 import { pool } from "../db/client";
+import { rollDice } from "../game/diceEngine";
 
 export interface DecodedToken {
   sub: string;
@@ -212,11 +213,7 @@ export async function handleWSMessage(ws: WebSocket, rawMessage: string, user: {
           });
         }
 
-        // Parse dice size (e.g., 'd20' -> 20)
-        const sizeMatch = dice_type.match(/^d(\d+)$/);
-        const diceSize = sizeMatch ? parseInt(sizeMatch[1], 10) : 20;
-        const raw = Math.floor(Math.random() * diceSize) + 1;
-        const final = raw + (modifier || 0);
+        const { raw, final } = rollDice(dice_type, modifier || 0);
 
         // 1. If user has a character, insert into public.dice_rolls
         if (participant.characterId) {

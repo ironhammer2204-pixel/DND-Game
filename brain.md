@@ -17,7 +17,7 @@ Last updated: 2026-06-07
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - Supabase config is aligned with the remote Postgres major version: `17`.
 - Local `supabase db reset` has not been verified yet because Docker was not running locally.
-- **Monorepo, Tooling, and Phase 1 Backend + Frontend are fully completed**:
+- **Monorepo, Tooling, Phase 1 (Foundation) & Phase 2 Dice Engine are fully completed**:
   - Implemented portable Node.js (v22.12.0 LTS) under `.node/` to bypass system dependency constraints.
   - Initialized Turborepo monorepo with `apps/web`, `apps/server`, and `packages/shared` workspaces.
   - Set up base configurations for TypeScript, ESLint (v9 Flat Config), and Prettier.
@@ -28,6 +28,8 @@ Last updated: 2026-06-07
   - Integrated Supabase DB client pool utilizing environment connection settings.
   - Implemented WebSocket Room Manager with room boundaries (max 10 players), connection tracking, and broadcast capabilities.
   - Built React/Vite/TS web application supporting registration/login, lobby campaign management, custom character creator, real-time log, attributes d20 rolling, and quick dice rollers.
+  - Developed a cryptographically secure server-side dice engine (`diceEngine.ts`) utilizing `crypto.randomInt`.
+  - Implemented a complete DicePanel UI on both DM and player screens featuring rolling buttons for all standard dice types (`d4`, `d6`, `d8`, `d10`, `d12`, `d20`, `d100`) and a customizable numeric modifier input.
   - Verified compilation build and lint checks pass cleanly across the monorepo workspace.
 
 ---
@@ -115,9 +117,51 @@ The server is authoritative for all game state. The AI narrates outcomes — it 
 ```
 dnd-game/
 ├── apps/
-│   ├── web/                          # React + Vite frontend → Vercel
+│   ├── web/                          # React + Vite frontend (Single-file client shell in early phases)
 │   │   └── src/
-│   │       ├── components/
+│   │       ├── assets/               # Static assets
+│   │       ├── App.css               # Component specific styling
+│   │       ├── App.tsx               # Main frontend codebase (All-in-one lobby/game shell)
+│   │       ├── config.ts             # Client environment configuration
+│   │       ├── index.css             # Main stylesheet & design system
+│   │       └── main.tsx              # Application entry point
+│   │
+│   └── server/                       # Node.js + Express backend
+│       └── src/
+│           ├── db/
+│           │   ├── client.ts         # pg pool → Supabase connection
+│           │   └── supabase.ts       # Supabase service client
+│           ├── game/
+│           │   └── diceEngine.ts     # Cryptographically secure dice rolling utility
+│           ├── middleware/
+│           │   └── auth.ts           # Local JWT verification middleware
+│           ├── routes/
+│           │   ├── auth.ts           # Authentication REST endpoints
+│           │   ├── campaigns.ts      # Campaign lobby & management REST endpoints
+│           │   └── characters.ts     # Character spawning REST endpoints
+│           ├── websocket/
+│           │   ├── roomManager.ts    # WS campaign connection tracking
+│           │   └── eventHandlers.ts  # WS message parsing & routing (calls diceEngine)
+│           └── index.ts              # Server entry point (HTTP + WebSockets)
+│
+├── packages/
+│   └── shared/                       # Shared type definitions & constants
+│       └── src/
+│           ├── constants/            # Game constants (races, classes, skills)
+│           ├── types/                # TS Types (Character, Campaign, WS events)
+│           └── index.ts              # Entry exporter
+│
+└── brain.md                          # Source of truth project spec
+```
+
+#### Target Folder Structure (Refactoring/Modularization Plan)
+When the codebase is refactored in later phases, the folders will be modularized as follows:
+```
+dnd-game/
+├── apps/
+│   ├── web/
+│   │   └── src/
+│   │       ├── components/           # Extracted UI components
 │   │       │   ├── game/             # GameView, CombatInterface
 │   │       │   ├── character/        # CharacterSheet, Inventory
 │   │       │   ├── ui/               # Chat, DicePanel, QuestLog
@@ -126,9 +170,9 @@ dnd-game/
 │   │       ├── stores/               # Zustand: gameStore, uiStore
 │   │       ├── pages/                # Lobby, Campaign, CharCreate, Auth
 │   │       ├── services/             # api.ts, ws.ts
-│   │       └── types/                # Shared TS types (mirrored from server)
+│   │       └── types/                # Shared TS types
 │   │
-│   └── server/                       # Node.js + Express → Render.com
+│   └── server/
 │       └── src/
 │           ├── routes/
 │           │   ├── auth.ts
@@ -137,34 +181,26 @@ dnd-game/
 │           │   ├── quests.ts
 │           │   └── world.ts
 │           ├── websocket/
-│           │   ├── roomManager.ts    # 10-player rooms, reconnect
-│           │   ├── eventHandlers.ts  # WS event dispatch
-│           │   └── events.ts         # Event type constants
+│           │   ├── roomManager.ts
+│           │   ├── eventHandlers.ts
+│           │   └── events.ts
 │           ├── game/
 │           │   ├── actionProcessor.ts
 │           │   ├── combatEngine.ts
-│           │   ├── diceEngine.ts     # crypto.randomInt — server only
+│           │   ├── diceEngine.ts     # crypto.randomInt refactored logic
 │           │   ├── questManager.ts
 │           │   └── worldEngine.ts
 │           ├── ai/
-│           │   ├── dmService.ts      # Groq API caller
-│           │   ├── contextBuilder.ts # Assembles read-only DB snapshot
+│           │   ├── dmService.ts
+│           │   ├── contextBuilder.ts
 │           │   └── promptTemplates.ts
 │           ├── db/
-│           │   ├── client.ts         # pg pool → Supabase
-│           │   ├── migrations/       # SQL files
-│           │   └── queries/          # Typed query functions per table
+│           │   ├── client.ts
+│           │   ├── migrations/
+│           │   └── queries/
 │           └── middleware/
 │               ├── auth.ts
 │               └── validate.ts
-│
-├── packages/
-│   └── shared/                       # Shared types + constants
-│       └── src/
-│           ├── types/                # Character, Quest, Combat, NPC
-│           └── constants/            # Dice, Races, Classes, Skills
-│
-└── package.json                      # Turborepo monorepo root
 ```
 
 ---
@@ -647,17 +683,22 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 ## API Routes
 
 ```
+// === Implemented REST Endpoints ===
 POST   /api/auth/register
 POST   /api/auth/login
 POST   /api/auth/logout
 
-POST   /api/campaigns                    # create
-GET    /api/campaigns/:id                # get campaign
+POST   /api/campaigns                    # create campaign
+GET    /api/campaigns                    # list campaigns user belongs to
 POST   /api/campaigns/join               # join via invite code
-GET    /api/campaigns/:id/members
+GET    /api/campaigns/:id                # get campaign details
 
 POST   /api/characters                   # create character
-GET    /api/characters/:id
+GET    /api/characters/:id               # retrieve character details
+GET    /api/characters/campaign/:campaignId # list campaign characters
+
+// === Planned REST Endpoints (Phase 2 & 3) ===
+GET    /api/campaigns/:id/members
 PATCH  /api/characters/:id               # server-only mutations
 
 GET    /api/campaigns/:id/quests
