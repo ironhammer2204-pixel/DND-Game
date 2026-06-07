@@ -16,53 +16,23 @@ Last updated: 2026-06-07 (comprehensive audit completed)
 - Database baseline includes the 12 core tables, indexes, update trigger, RLS enabled on all tables, and baseline private-campaign RLS policies.
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - Supabase config is aligned with the remote Postgres major version: `17`.
-- Local `supabase db reset` has not been verified yet because Docker was not running locally.
-- **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested
-- **Phase 2 (Game systems): PARTIALLY COMPLETE (~65%)**
-  - Complete: Dice engine, Action processor (with skill checks), World system (server-side), Inventory system, Event log UI
-  - Character sheet is partially complete: attributes, skills, HP, gold, equipped items, AC, attack bonus, and spell save DC are displayed
-  - Still pending: location UI, gold transaction ledger, level-up logic
-- **Phase 3 (AI + Combat + Living World): PARTIALLY COMPLETE**
-  - ✅ Combat engine complete
-  - ✅ Nemesis system complete  
-  - ✅ NPC seeding done (3 NPCs per campaign)
-  - ✅ Death saves implemented
-  - ✅ Conditions system implemented
-  - ✅ Nemesis/combat integration complete
+- Local `supabase db reset` has not been verified yet because Docker was not running locally- **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested
+- **Phase 2 (Game systems): PARTIALLY COMPLETE (~75%)**
+  - Complete: Dice engine, Action processor (with skill checks), World system (server-side), Inventory system, Event log UI, Quest log UI, derived stats and equipment.
+  - Character sheet: attributes, skills, HP, gold, equipped items, AC, attack bonus, and spell save DC are displayed.
+  - Still pending: location/world navigation UI, gold transaction ledger, level-up logic.
+- **Phase 3 (AI + Combat + Living World): FULLY COMPLETE** — Combat loop, Nemesis grudge promotion, conditions system, NPC seeding, death saves, Groq AI narration pipeline, and narration display have been shipped.
+- **Phase 4 (World Engine & Behaviour System): FULLY COMPLETE** — Server-authoritative heartbeat loop (factions power levels, NPC agendas, location unlocks, quest triggers, NPC spawns, objective checks, consequence arcs, and hidden class unlocks), deterministic + LLM-assisted behaviour tagging, and a DM behaviour-debug route are fully built.
 
 ## What is NOT yet implemented
 
-### Phase 3 remaining
-1. **AI DM narration pipeline** — `dmService.ts`, `contextBuilder.ts`, `promptTemplates.ts`
-   written and ready to drop into `apps/server/src/ai/`. Wiring patches documented
-   in `combatEngine_wiring.ts`, `actionProcessor_wiring.ts`, `narrationBroadcast_wiring.ts`.
-   Still needs: `narrationEmitter.ts` created, wiring patches manually applied,
-   `AI_NARRATION` WS case added to gameStore, narration `<p>` added to GamePage.
-2. **Groq integration** — openai package needed in apps/server (`npm install openai`).
-   GROQ_API_KEY must be set in Render env vars.
-3. **Behaviour tracking tables** — `character_behaviour_log`, `character_behaviour_profile`
-   not yet in migrations. `hiddenClassEngine.ts` not yet built.
-4. **Hidden/emergent class system** — fully designed, not coded.
-5. **Faction pressure tick** — `runWorldHeartbeat` moves nemeses but doesn't tick
-   faction power levels or fire threshold events.
-
-### Phase 4 — World Engine (newly designed, not yet coded)
-This is the biggest architectural addition since the nemesis system. Read the full
-design before touching any of it.
-
-6. **No human DM** — world expansion must be fully server-driven and deterministic.
-   AI narrates. Server decides. No human creates content at runtime.
-7. **Consequence engine** — behaviour tagging system, world state flags, consequence
-   arc triggers. Core design complete, implementation not started.
-8. **World Engine tick** — `runWorldHeartbeat` needs to grow into a full world tick
-   with `checkLocationUnlocks`, `checkQuestTriggers`, `checkNpcSpawns`,
-   `checkQuestObjectives` as deterministic server functions.
-9. **NPC template pool** — `packages/shared/src/constants/npcTemplates.ts` not yet
-   created. ~30 templates needed.
-10. **Quest objective conditions** — quests need structured server-checkable conditions
-    (kill_count, location_visit, npc_interaction), not just display strings.
-11. **Authored content** — ~12 world state flags, ~8 consequence arcs, ~15 location
-    templates, ~30 NPC templates, main quest spine (5-6 beats) needed.
+### Remaining Polish & Interface Tasks
+1. **Location/world navigation UI** — players need a visual dashboard to see nearby locations, connections, and click to travel between them.
+2. **Gold transaction ledger** — a dedicated UI view of financial adjustments.
+3. **Level-up screen** — a user interface panel for allocating attributes and choosing class specialities upon leveling up.
+4. **World Encyclopedia** — browsable list of discovered locations, known NPCs, and factions (fog of war locked).
+5. **Session History page** — recap summaries and shared logs of previous game events.
+6. **Mobile-responsive styling pass** — styling tweaks for tablets and phone sizes.
 
 - Recent fixes:
   - Fixed action processor to properly dispatch skill check actions (rolls d20 + skill modifier)
@@ -1109,69 +1079,69 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Build nemesis gallery UI — premium frontend gallery with card grids, timelines, and DM controls
 
 #### Faction Pressure System
-- [ ] Create base factions for starter world (Order of the Cloaked Flame, Blackwater Syndicate, Merchant's Guild, Druidic Circle)
-- [ ] Build `factionEngine.ts` — tracks power, disposition, goals
-- [ ] Implement power calculation: faction gains power when they control locations/defeat enemies, lose it when locations are liberated
-- [ ] Implement disposition calculation: changes based on party actions for/against that faction
-- [ ] Build faction_events trigger system: when power crosses thresholds (50, 70, 90), fire corresponding actions
-- [ ] Action types: 'seize_location', 'send_assassin', 'offer_contract', 'siege', 'install_ruler'
-- [ ] Persist faction_events to DB; show in world_tick_log
+- [x] Create base factions for starter world (Order of the Cloaked Flame, Blackwater Syndicate, Merchant's Guild, Druidic Circle)
+- [x] Build `factionEngine.ts` — tracks power, disposition, goals (integrated into worldEngine.ts)
+- [x] Implement power calculation: faction gains power when they control locations/defeat enemies, lose it when locations are liberated
+- [x] Implement disposition calculation: changes based on party actions for/against that faction
+- [x] Build faction_events trigger system: when power crosses thresholds (50, 70, 90), fire corresponding actions
+- [x] Action types: 'seize_location', 'send_assassin', 'offer_contract', 'siege', 'install_ruler'
+- [x] Persist faction_events to DB; show in world_tick_log
 
 #### World Heartbeat — Simulation Tick
-- [/] Build `worldHeartbeat.ts` — integrated nemesis movement and rest ambushes into action processor
+- [x] Build `worldHeartbeat.ts` — integrated nemesis movement and rest ambushes into action processor
 - [x] Tick nemesis movement: move active nemeses between locations based on grudge and faction coordination
 - [x] Grudge-biased rest ambush: high grudge triggers ambush on party rest
 - [x] Warlord location control: warlord-tier nemeses claim locations under `nemesis_controlled` flags
-- [ ] Tick faction power: update based on current controlled locations and goals
-- [ ] Tick faction events: fire any events with trigger_condition met
-- [ ] Tick NPC agendas: update short-term goal progress; if stuck, trigger NPC-initiated world event
-- [ ] Generate new rumours from recent events; seed into tavern NPCs (via npc.memory_log)
-- [ ] Update location state: if under faction siege, mark as 'under_occupation', update description
-- [ ] Log all changes to world_tick_log with reasoning
-- [ ] Broadcast `WORLD_UPDATE` to all connected players showing faction-driven changes
+- [x] Tick faction power: update based on current controlled locations and goals
+- [x] Tick faction events: fire any events with trigger_condition met
+- [x] Tick NPC agendas: update short-term goal progress; if stuck, trigger NPC-initiated world event
+- [x] Generate new rumours from recent events; seed into tavern NPCs (via npc.memory_log)
+- [x] Update location state: if under faction siege, mark as 'under_occupation', update description
+- [x] Log all changes to world_tick_log with reasoning
+- [x] Broadcast `WORLD_UPDATE` to all connected players showing faction-driven changes
 
 #### NPC Agenda System
-- [ ] Upgrade `npcs` table: add short_term_goal, long_term_goal, secret, agenda_state, relationships
-- [ ] Build `npcAgendaEngine.ts` — tracks NPC goals and progress
-- [ ] Short-term goals: investigation, acquisition, socialising (each has a success condition)
-- [ ] Long-term goals: self-improvement, power, wealth (check progress on each world tick)
-- [ ] Secrets: revealed only if relationship trust > 80 or under duress
-- [ ] Relationship tracking: if NPC helps party, trust increases; if party betrays them, trust decreases
-- [ ] NPC-initiated events: if NPC reaches end of short-term goal without player help, they take solo action (accuse someone, strike a deal, abandon location)
-- [ ] Build NPC profile UI — show goals, secrets (if known), and relationship status with party
+- [x] Upgrade `npcs` table: add short_term_goal, long_term_goal, secret, agenda_state, relationships
+- [x] Build `npcAgendaEngine.ts` — tracks NPC goals and progress
+- [x] Short-term goals: investigation, acquisition, socialising (each has a success condition)
+- [x] Long-term goals: self-improvement, power, wealth (check progress on each world tick)
+- [x] Secrets: revealed only if relationship trust > 80 or under duress
+- [x] Relationship tracking: if NPC helps party, trust increases; if party betrays them, trust decreases
+- [x] NPC-initiated events: if NPC reaches end of short-term goal without player help, they take solo action (accuse someone, strike a deal, abandon location)
+- [x] Build NPC profile UI — show goals, secrets (if known), and relationship status with party
 
 #### Groq narration upgrade
-- [ ] Expand context builder to include: nemesis history, NPC agenda status, faction disposition, recent world_tick changes
-- [ ] Build `nemesisContextBuilder.ts` — extracts nemesis personality and history for AI
-- [ ] Build `factionContextBuilder.ts` — extracts faction goals and recent actions for world narration
-- [ ] Expand system prompt: *"Narrate using the nemesis's personality. Reference their specific history. Show the world reacting to faction pressure."*
-- [ ] Stream narration that incorporates: specific character names (nemesis), specific past events (history), faction movements (world pressure)
+- [x] Expand context builder to include: nemesis history, NPC agenda status, faction disposition, recent world_tick changes
+- [x] Build `nemesisContextBuilder.ts` — extracts nemesis personality and history for AI
+- [x] Build `factionContextBuilder.ts` — extracts faction goals and recent actions for world narration
+- [x] Expand system prompt: *"Narrate using the nemesis's personality. Reference their specific history. Show the world reacting to faction pressure."*
+- [x] Stream narration that incorporates: specific character names (nemesis), specific past events (history), faction movements (world pressure)
 
 #### Procedural quest generation (upgraded)
-- [ ] Build quest generator: pick template (fetch, kill, escort, find, political, faction)
-- [ ] Political quests: generated from NPC agendas and faction conflicts
-- [ ] Faction quests: generated from faction_events (seize location → defend location quest)
-- [ ] Server can auto-generate a quest when party enters a location with no active quests
-- [ ] Generated quests go through same DB + broadcast flow as hand-authored quests
-- [ ] Quests now reference nemeses and factions in their objectives (kill nemesis, secure location for faction)
+- [x] Build quest generator: pick template (fetch, kill, escort, find, political, faction)
+- [x] Political quests: generated from NPC agendas and faction conflicts
+- [x] Faction quests: generated from faction_events (seize location → defend location quest)
+- [x] Server can auto-generate a quest when party enters a location with no active quests
+- [x] Generated quests go through same DB + broadcast flow as hand-authored quests
+- [x] Quests now reference nemeses and factions in their objectives (kill nemesis, secure location for faction)
 
 #### Emergent Class System
-- [ ] Create `character_behaviour_log` and `character_behaviour_profile` tables
-- [ ] Create `character_classes` table (replace single class column on characters)
-- [ ] Build `hiddenClassEngine.ts` — runs after every action, checks unlock thresholds
-- [ ] Implement behaviour tagging: every action type (kill, spare, lie, betray, etc.) increments relevant tags
-- [ ] Define `HIDDEN_CLASSES` config file with 10–15 pattern definitions (editable, no code changes needed)
-- [ ] Build behaviour threshold checker: when profile crosses unlock_conditions, queue unlock event
-- [ ] Implement three unlock delivery types:
+- [x] Create `character_behaviour_log` and `character_behaviour_profile` tables
+- [x] Create `character_classes` table (replace single class column on characters)
+- [x] Build `hiddenClassEngine.ts` — runs after every action, checks unlock thresholds
+- [x] Implement behaviour tagging: every action type (kill, spare, lie, betray, etc.) increments relevant tags
+- [x] Define `HIDDEN_CLASSES` config file with 10–15 pattern definitions (editable, no code changes needed)
+- [x] Build behaviour threshold checker: when profile crosses unlock_conditions, queue unlock event
+- [x] Implement three unlock delivery types:
   - `npc_contact`: AI-generated NPC encounter referencing character's behaviour history
   - `dream_sequence`: AI-generated dream vision using behaviour tags as emotional core
   - `world_event`: Visible world change (door opens, faction messenger arrives, etc.)
-- [ ] Build variant resolver: determine which variant based on secondary behaviour scores
-- [ ] Store unlock_story narration in `character_class_unlocks` for posterity
-- [ ] Allow player to refuse unlock (refusal is logged)
-- [ ] Build hidden class UI: show class name and flavour only after unlock
-- [ ] Extend AI context builder: include character's behaviour tags and unlock history
-- [ ] Ensure AI references actual behaviour history in unlock narration
+- [x] Build variant resolver: determine which variant based on secondary behaviour scores
+- [x] Store unlock_story narration in `character_class_unlocks` for posterity
+- [x] Allow player to refuse unlock (refusal is logged)
+- [x] Build hidden class UI: show class name and flavour only after unlock
+- [x] Extend AI context builder: include character's behaviour tags and unlock history
+- [x] Ensure AI references actual behaviour history in unlock narration
 
 #### Phase 2 catch-up (still needed before Phase 3 is playable)
 - [ ] **Build location/world navigation UI** — players can see locations, see connections, click to move (blocks all Phase 2 completion)

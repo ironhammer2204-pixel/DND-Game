@@ -880,13 +880,14 @@ export async function recordBehaviourEvent(
   characterId: string,
   actionType: string,
   tags: string[],
-  weight: number = 1
+  weight: number = 1,
+  context: Record<string, any> = {}
 ): Promise<void> {
   // 1. Log the event
   await client.query(
-    `INSERT INTO public.character_behaviour_log (character_id, campaign_id, action_type, tags, weight)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [characterId, campaignId, actionType, tags, weight]
+    `INSERT INTO public.character_behaviour_log (character_id, campaign_id, action_type, tags, weight, context)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [characterId, campaignId, actionType, tags, weight, JSON.stringify(context)]
   );
 
   // 2. Increment behaviour profile tag scores

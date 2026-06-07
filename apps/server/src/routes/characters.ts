@@ -579,4 +579,67 @@ router.post("/:id/allocate-stats", authMiddleware, async (req: AuthenticatedRequ
   }
 });
 
+// GET /api/characters/:id/behaviour-debug - DM-only debug route for character's behaviour profile
+router.get("/:id/behaviour-debug", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const characterId = req.params.id;
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    // 1. Fetch the character to find their campaign_id
+    const charRes = await pool.query(
+      "SELECT campaign_id, name FROM public.characters WHERE id = $1",
+      [characterId]
+    );
+    if (charRes.rows.length === 0) {
+      return res.status(404).json({ error: "Character not found" });
+    }
+    const campaignId = charRes.rows[0].campaign_id;
+    const characterName = charRes.rows[0].name;
+
+    // 2. Check if the user is a DM of that campaign
+    const memberCheck = await pool.query(
+      "SELECT role FROM public.campaign_members WHERE campaign_id = $1 AND user_id = $2",
+      [campaignId, userId]
+    );
+    const isDM = memberCheck.rows[0]?.role === "dm";
+    if (!isDM) {
+      return res.status(403).json({ error: "Forbidden: Only campaign DMs can access behaviour debug logs" });
+    }
+
+    // 3. Query character's behaviour profile scores
+    const profileRes = await pool.query(
+      "SELECT tag_scores, updated_at FROM public.character_behaviour_profile WHERE character_id = $1",
+      [characterId]
+    );
+
+    // 4. Query character's behaviour logs for history
+    const logsRes = await pool.query(
+      "SELECT action_type, tags, weight, context, created_at FROM public.character_behaviour_log WHERE character_id = $1 ORDER BY created_at DESC LIMIT 50",
+      [characterId]
+    );
+
+    // 5. Query character's unlocked classes
+    const classesRes = await pool.query(
+      "SELECT class_type, class_name, class_level, unlocked_at, unlock_story FROM public.character_classes WHERE character_id = $1 ORDER BY unlocked_at DESC",
+      [characterId]
+    );
+
+    res.json({
+      character_id: characterId,
+      character_name: characterName,
+      tag_scores: profileRes.rows[0]?.tag_scores || {},
+      profile_updated_at: profileRes.rows[0]?.updated_at || null,
+      behaviour_logs: logsRes.rows,
+      unlocked_classes: classesRes.rows,
+    });
+  } catch (error) {
+    console.error("GET behaviour-debug error:", error);
+    res.status(500).json({ error: "Internal server error fetching behaviour debug" });
+  }
+});
+
 export default router;

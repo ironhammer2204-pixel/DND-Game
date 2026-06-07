@@ -6,8 +6,32 @@ import { MONSTERS, CombatParticipant, CombatEncounter } from "@dnd/shared";
 import { rollDice, rollWithAdvantage, rollWithDisadvantage } from "./diceEngine";
 import { RoomManager } from "../websocket/roomManager";
 import { evaluateCombatForNemesisPromotion, getNemesisById, selectNemesisTarget } from "./nemesisEngine";
+import { recordBehaviourEvent, checkQuestObjectives } from "./worldEngine.js";
 
 const turnTimers = new Map<string, NodeJS.Timeout>();
+
+function getMonsterFaction(monsterId: string, activeFactionDemands: string[]): string {
+  const lowercaseDemands = activeFactionDemands.map(d => d.toLowerCase());
+  
+  if (monsterId === "goblin") {
+    if (lowercaseDemands.includes("syndicate invaders")) return "Syndicate Invaders";
+    return "Blackwater Syndicate";
+  }
+  if (monsterId === "orc") {
+    if (lowercaseDemands.includes("ascendant order")) return "Ascendant Order";
+    return "Ashen Cult";
+  }
+  if (monsterId === "kobold") {
+    return "Cave Horrors";
+  }
+  if (monsterId === "skeleton") {
+    return "Undead";
+  }
+  if (monsterId === "red_dragon") {
+    return "Red Dragons";
+  }
+  return "Unknown";
+}
 
 function parseDamageDice(damageDice: string, modifier: number): number {
   const match = damageDice.match(/^(\d+)d(\d+)$/);
@@ -529,6 +553,49 @@ async function performAttackAction(
         attacker.downed_character_ids = [...new Set([...(attacker.downed_character_ids || []), target.id])];
       } else {
         text += ` **${target.name} has been defeated!**`;
+        if (attacker.type === "player") {
+          // Get the active quests for the campaign to check target_faction requirements
+          const activeQuestsRes = await client.query(
+            "SELECT objectives FROM public.quests WHERE campaign_id = $1 AND status = 'active'",
+            [campaignId]
+          );
+          const activeFactionDemands: string[] = [];
+          for (const row of activeQuestsRes.rows) {
+            const objectives = Array.isArray(row.objectives) ? row.objectives : [];
+            for (const obj of objectives) {
+              if (obj.condition?.type === "kill_count" && obj.condition.target_faction) {
+                activeFactionDemands.push(obj.condition.target_faction);
+              }
+            }
+          }
+          
+          let factionName = "Unknown";
+          if (target.nemesis_id) {
+            const nemesisRes = await client.query(
+              "SELECT f.name FROM public.nemeses n LEFT JOIN public.factions f ON f.id = n.faction_id WHERE n.id = $1",
+              [target.nemesis_id]
+            );
+            if (nemesisRes.rows[0]?.name) {
+              factionName = nemesisRes.rows[0].name;
+            }
+          } else if (target.source_monster_id) {
+            factionName = getMonsterFaction(target.source_monster_id, activeFactionDemands);
+          }
+
+          // Record behaviour event for the kill
+          await recordBehaviourEvent(
+            client,
+            campaignId,
+            attacker.id,
+            "kill",
+            ["cruelty"],
+            1,
+            { target_id: target.id, target_name: target.name, target_faction: factionName }
+          );
+
+          // Update player quest objectives
+          await checkQuestObjectives(client, campaignId);
+        }
       }
     }
   } else {
