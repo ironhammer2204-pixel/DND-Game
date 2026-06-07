@@ -316,6 +316,17 @@ export function GamePage() {
                 </div>
               </div>
               <div className="right-panel__section">
+                <div className="sidebar-section-title">Skills</div>
+                <div className="skill-list" role="list">
+                  {Object.entries(myCharacter.skills || {}).map(([skill, bonus]) => (
+                    <div key={skill} role="listitem" className="skill-row">
+                      <span className="skill-row__name">{skill.charAt(0).toUpperCase() + skill.slice(1)}</span>
+                      <span className="skill-row__bonus">{Number(bonus) >= 0 ? "+" : ""}{bonus}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="right-panel__section">
                 <div className="sidebar-section-title">Quick Dice</div>
                 <DicePanel onRoll={rollDice} disabled={wsStatus !== "connected"} />
               </div>

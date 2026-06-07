@@ -133,3 +133,9 @@ button, input, select, textarea { font-family: var(--font-body); }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
 
 .sidebar-section-title { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
+
+.skill-list { display: flex; flex-direction: column; gap: 8px; }
+.skill-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--bg-card); border: 1px solid var(--border-panel); border-radius: 5px; font-size: 0.9rem; }
+.skill-row__name { color: var(--text-white); font-weight: 500; }
+.skill-row__bonus { color: var(--accent-cyan); font-weight: 600; font-family: 'Courier New', monospace; }
+

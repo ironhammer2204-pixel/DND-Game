@@ -29,6 +29,54 @@ interface CampaignWorldState {
   character_locations?: Record<string, string>;
 }
 
+async function processSkillCheckAction(
+  client: PoolClient,
+  participant: ActionParticipant,
+  characterName: string,
+  actionText: string
+): Promise<ProcessedAction> {
+  const charRes = await client.query(
+    `SELECT skills FROM public.characters WHERE id = $1`,
+    [participant.characterId]
+  );
+
+  if (charRes.rows.length === 0) {
+    throw new Error("Character not found");
+  }
+
+  const skills = charRes.rows[0].skills || {};
+  const skillKeys = Object.keys(skills);
+  const chosenSkill = skillKeys[Math.floor(Math.random() * skillKeys.length)] || "perception";
+  const skillBonus = (skills[chosenSkill] || 0) as number;
+  const rawRoll = Math.floor(Math.random() * 20) + 1;
+  const finalValue = rawRoll + skillBonus;
+
+  const payload = {
+    action_type: "skill_check",
+    text: actionText,
+    actor_name: characterName,
+    skill: chosenSkill,
+    raw_roll: rawRoll,
+    skill_bonus: skillBonus,
+    final_value: finalValue,
+  };
+
+  const logRes = await client.query(
+    "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'skill_check', $2, $3) RETURNING id, created_at",
+    [participant.campaignId, participant.characterId, JSON.stringify(payload)]
+  );
+
+  return {
+    event: {
+      id: logRes.rows[0].id,
+      type: "exploration",
+      actor_name: characterName,
+      payload,
+      timestamp: logRes.rows[0].created_at,
+    },
+  };
+}
+
 async function processMovementAction(
   client: PoolClient,
   participant: ActionParticipant,
@@ -167,6 +215,21 @@ export async function processPlayerAction(
     try {
       await client.query("BEGIN");
       const result = await processMovementAction(client, participant, characterName, input.target_location_id);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  if (actionType === "skill_check") {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await processSkillCheckAction(client, participant, characterName, text);
       await client.query("COMMIT");
       return result;
     } catch (error) {

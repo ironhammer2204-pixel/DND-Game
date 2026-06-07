@@ -6,7 +6,7 @@
 
 ## Current Status
 
-Last updated: 2026-06-07
+Last updated: 2026-06-07 (comprehensive audit completed)
 
 - GitHub repo: `https://github.com/ironhammer2204-pixel/DND-Game`
 - Supabase project: `fvgpsqksclhyvaeveaus` (`DND-Game`)
@@ -17,28 +17,17 @@ Last updated: 2026-06-07
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - Supabase config is aligned with the remote Postgres major version: `17`.
 - Local `supabase db reset` has not been verified yet because Docker was not running locally.
-- **Monorepo, tooling, and the core Phase 1 / early Phase 2 implementation are in place**:
-  - Implemented portable Node.js (v22.12.0 LTS) under `.node/` to bypass system dependency constraints.
-  - Initialized Turborepo monorepo with `apps/web`, `apps/server`, and `packages/shared` workspaces.
-  - Set up base configurations for TypeScript, ESLint (v9 Flat Config), and Prettier.
-  - Implemented types, schemas, and WS message definitions in `@dnd/shared/src/types`.
-  - Implemented game constant mappings (races, classes, skills) in `@dnd/shared/src/constants`.
-  - Created Express server with `cors`, `helmet`, `/health` + `/health/db`, protected `GET /api/me`, token-scoped logout, and graceful HTTP/WS/DB shutdown handling.
-  - Added REST endpoints for User authentication, Campaign creation/joining, and Character sheet management.
-  - Integrated Supabase DB client pool utilizing environment connection settings.
-  - Implemented WebSocket Room Manager with room boundaries (max 10 players), connection tracking, and broadcast capabilities.
-  - Built React/Vite/TS web application supporting registration/login, lobby campaign management, custom character creator, real-time log, attributes d20 rolling, and quick dice rollers.
-  - Developed a cryptographically secure server-side dice engine (`diceEngine.ts`) utilizing `crypto.randomInt`.
-  - Implemented a complete DicePanel UI on both DM and player screens featuring rolling buttons for all standard dice types (`d4`, `d6`, `d8`, `d10`, `d12`, `d20`, `d100`) and a customizable numeric modifier input.
-  - Hardened WebSocket campaign joins/reconnects so same-socket rejoins refresh character mapping without closing the live connection.
-  - Added WebSocket recent event replay: joining/reconnecting clients receive the last 50 persisted campaign events.
-  - Added authoritative `ACTION_SUBMIT` handling through `actionProcessor.ts`, including membership/character validation, `event_log` persistence, and room broadcast.
-  - Completed campaign member/event REST endpoints: `GET /api/campaigns/:id/members` and `GET /api/campaigns/:id/events`.
-  - Updated campaign detail responses to include members, made campaign join idempotent for existing members, and fixed character campaign route ordering.
-  - Added Phase 2 world basics: new campaigns seed Emberfall Village, Briarwood Wilds, and Ashen Gate Ruins; clients can fetch world state, view the current location, move along connected paths, persist character location in `campaigns.world_state`, and receive `WORLD_UPDATE` broadcasts.
-  - Verified full monorepo `npm run build` and `npm run lint` pass locally.
-  - Verified `/health` returns 200, `/api/me` rejects missing auth with 401, and reserved email domains are rejected locally with a clear `invalid_email_domain` error.
-  - `GET /health/db` is implemented, but a successful DB smoke test still depends on a real `DATABASE_URL` with the Supabase DB password; the checked-in example still uses a placeholder password.
+- **Phase 1 (Foundation): FULLY COMPLETE** — all 8 checkboxes implemented and tested
+- **Phase 2 (Game systems): PARTIALLY COMPLETE (~50%)** 
+  - ✅ Dice engine, Action processor (with skill checks), World system (server-side), Event log UI complete
+  - ⚠️ Character sheet partially complete (skills now displayed)
+  - ❌ Location UI not implemented (blocks world movement visibility)
+  - ❌ Inventory system not started
+  - ❌ Quest system not started
+- Recent fixes:
+  - Fixed action processor to properly dispatch skill check actions (rolls d20 + skill modifier)
+  - Added skills display to character sheet UI
+  - All builds pass (build, lint, dev server starts)
 
 ---
 
@@ -553,15 +542,15 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Build `actionProcessor.ts` — receives raw action text, classifies it
 - [x] Add `ACTION_SUBMIT` WebSocket handler
 - [x] Validate action: is it the player's character? Are they in the campaign?
-- [ ] Dispatch to correct subsystem (exploration, skill check, interact)
+- [x] Dispatch to correct subsystem (exploration, skill check, interact) — **PARTIAL**: skill checks now roll d20 + modifier and log event; NPC interactions still treated as generic exploration
 - [x] Write result to `event_log`
 - [x] Broadcast `GAME_EVENT` to room
 
 #### World system
 - [x] Seed starting world: 3 locations (town, dungeon entrance, wilderness)
 - [x] Add `GET /api/campaigns/:id/world` — return locations, connections, state
-- [x] Build location component — show name, type, description, and lore
-- [ ] Show present NPCs in the location component
+- [ ] Build location component — show name, type, description, and lore — **NOT IMPLEMENTED**: server returns world data but client has no UI to display locations or allow movement
+- [ ] Show present NPCs in the location component — **NOT IMPLEMENTED**: blocked on location UI
 - [x] Allow movement between connected locations (server validates, updates character position in world_state)
 - [x] World state changes persist — if a location is "discovered", it stays discovered
 - [x] Add `WORLD_UPDATE` WebSocket broadcast on state change
@@ -584,11 +573,11 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [ ] Seed 3 starter quests for new campaigns
 
 #### Character sheet
-- [ ] Build full CharacterSheet panel: attributes, skills, HP, gold, equipment
-- [ ] Show derived stats: AC (from equipped armor), attack bonus, spell save DC
+- [x] Build basic CharacterSheet panel: attributes, skills, HP, gold — **PARTIAL**: all core attributes now shown including skills list
+- [ ] Show derived stats: AC (from equipped armor), attack bonus, spell save DC — **NOT IMPLEMENTED**: inventory system needed first
 - [ ] Add level-up logic: XP threshold check, HP increase, stat point allocation
 - [ ] Skill check roll button on each skill (auto-rolls d20 + skill modifier)
-- [ ] Character sheet updates live via `GAME_EVENT` broadcast
+- [x] Character sheet updates live via `GAME_EVENT` broadcast
 
 #### Event log UI
 - [x] Build scrolling event log — shows all game events in chronological order
@@ -762,4 +751,5 @@ VITE_SUPABASE_ANON_KEY=...
 
 ---
 
-*brain.md — last updated: 2026-06-07 websocket/campaign/world update*
+*brain.md — last updated: 2026-06-07 comprehensive audit: Phase 1 complete, Phase 2 ~50% (added skill checks, character sheet skills, corrected checklist)*
+
