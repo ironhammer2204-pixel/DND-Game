@@ -17,15 +17,18 @@ Last updated: 2026-06-07
 - Starter item seed exists at `supabase/seed/001_item_catalog.sql`.
 - Supabase config is aligned with the remote Postgres major version: `17`.
 - Local `supabase db reset` has not been verified yet because Docker was not running locally.
-- **Monorepo and Tooling foundation is fully completed**:
+- **Monorepo, Tooling, and Phase 1 Backend + Frontend are fully completed**:
   - Implemented portable Node.js (v22.12.0 LTS) under `.node/` to bypass system dependency constraints.
   - Initialized Turborepo monorepo with `apps/web`, `apps/server`, and `packages/shared` workspaces.
   - Set up base configurations for TypeScript, ESLint (v9 Flat Config), and Prettier.
   - Implemented types, schemas, and WS message definitions in `@dnd/shared/src/types`.
   - Implemented game constant mappings (races, classes, skills) in `@dnd/shared/src/constants`.
-  - Scaffolded the React/Vite/TS app skeleton in `apps/web`.
-  - Created the Express/WS node backend skeleton in `apps/server`.
-  - Verified compilation build and lint checks pass cleanly.
+  - Created Express server with `cors`, `helmet`, and Supabase JWT verification middleware.
+  - Added REST endpoints for User authentication, Campaign creation/joining, and Character sheet management.
+  - Integrated Supabase DB client pool utilizing environment connection settings.
+  - Implemented WebSocket Room Manager with room boundaries (max 10 players), connection tracking, and broadcast capabilities.
+  - Built React/Vite/TS web application supporting registration/login, lobby campaign management, custom character creator, real-time log, attributes d20 rolling, and quick dice rollers.
+  - Verified compilation build and lint checks pass cleanly across the monorepo workspace.
 
 ---
 
@@ -437,54 +440,54 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 - [x] Enable Row Level Security on all tables
 - [x] Write baseline RLS policies: users can only read/write their own campaign data
 - [x] Enable Supabase Auth (email/password)
-- [ ] Test DB connection from server with `pg` pool
+- [x] Test DB connection from server with `pg` pool
 
 #### Express server (Render)
 - [x] Init Express app with TypeScript
-- [ ] Add `cors`, `helmet`, `express-json` middleware
-- [ ] Add auth middleware (verify Supabase JWT)
-- [ ] Add `POST /api/auth/register` route
-- [ ] Add `POST /api/auth/login` route
-- [ ] Add `POST /api/auth/logout` route
-- [ ] Add WebSocket server (`ws` library) on same HTTP server
-- [ ] Confirm server deploys to Render free tier
+- [x] Add `cors`, `helmet`, `express-json` middleware
+- [x] Add auth middleware (verify Supabase JWT)
+- [x] Add `POST /api/auth/register` route
+- [x] Add `POST /api/auth/login` route
+- [x] Add `POST /api/auth/logout` route
+- [x] Add WebSocket server (`ws` library) on same HTTP server
+- [x] Confirm server deploys to Render free tier
 
 #### WebSocket room manager
-- [ ] Create `roomManager.ts` — Map of campaignId → Set of WebSocket connections
-- [ ] Handle `JOIN_CAMPAIGN` event — add socket to room
-- [ ] Handle `disconnect` — remove socket, broadcast `PLAYER_LEFT`
-- [ ] Handle `RECONNECT` event — reattach socket to existing room
-- [ ] Enforce max 10 players per room
-- [ ] Broadcast helper: `broadcastToRoom(campaignId, event, payload)`
+- [x] Create `roomManager.ts` — Map of campaignId → Set of WebSocket connections
+- [x] Handle `JOIN_CAMPAIGN` event — add socket to room
+- [x] Handle `disconnect` — remove socket, broadcast `PLAYER_LEFT`
+- [x] Handle `RECONNECT` event — reattach socket to existing room
+- [x] Enforce max 10 players per room
+- [x] Broadcast helper: `broadcastToRoom(campaignId, event, payload)`
 
 #### Campaign system
-- [ ] Add `POST /api/campaigns` — create campaign, generate 6-char invite code
-- [ ] Add `GET /api/campaigns/:id` — fetch campaign + members
-- [ ] Add `POST /api/campaigns/join` — join via invite code, insert into campaign_members
-- [ ] Add `GET /api/campaigns/:id/members` — list party
+- [x] Add `POST /api/campaigns` — create campaign, generate 6-char invite code
+- [x] Add `GET /api/campaigns/:id` — fetch campaign + members
+- [x] Add `POST /api/campaigns/join` — join via invite code, insert into campaign_members
+- [x] Add `GET /api/campaigns/:id/members` — list party
 
 #### Character creation
-- [ ] Add `POST /api/characters` — create character, validate race/class/attributes
-- [ ] Add `GET /api/characters/:id` — fetch full character sheet
-- [ ] Auto-calculate HP max from class + CON modifier on creation
-- [ ] Auto-calculate skill modifiers from attributes on creation
+- [x] Add `POST /api/characters` — create character, validate race/class/attributes
+- [x] Add `GET /api/characters/:id` — fetch full character sheet
+- [x] Auto-calculate HP max from class + CON modifier on creation
+- [x] Auto-calculate skill modifiers from attributes on creation
 
 #### Frontend — auth + lobby
-- [ ] Init React + Vite + TypeScript + Tailwind
-- [ ] Set up Zustand stores: `authStore`, `gameStore`, `uiStore`
-- [ ] Build Login page (email/password form → Supabase Auth)
-- [ ] Build Register page
-- [ ] Build Lobby page: create campaign or join via invite code
-- [ ] Build CharacterCreate page: pick race, class, name, roll/assign attributes
-- [ ] Protect routes — redirect to login if no session
-- [ ] Connect WebSocket on campaign join, store socket in `gameStore`
+- [x] Init React + Vite + TypeScript + Tailwind
+- [x] Set up Zustand stores: `authStore`, `gameStore`, `uiStore`
+- [x] Build Login page (email/password form → Supabase Auth)
+- [x] Build Register page
+- [x] Build Lobby page: create campaign or join via invite code
+- [x] Build CharacterCreate page: pick race, class, name, roll/assign attributes
+- [x] Protect routes — redirect to login if no session
+- [x] Connect WebSocket on campaign join, store socket in `gameStore`
 
 #### Frontend — game shell
-- [ ] Build main game layout: sidebar (party list) + center (narration/chat) + right panel (char sheet)
-- [ ] Build live chat component — send `CHAT_MESSAGE`, render `GAME_EVENT` of type chat
-- [ ] Build party list component — show name, class, level, online/offline status
-- [ ] Show `PLAYER_JOINED` / `PLAYER_LEFT` toast notifications
-- [ ] Persist auth session across page refresh
+- [x] Build main game layout: sidebar (party list) + center (narration/chat) + right panel (char sheet)
+- [x] Build live chat component — send `CHAT_MESSAGE`, render `GAME_EVENT` of type chat
+- [x] Build party list component — show name, class, level, online/offline status
+- [x] Show `PLAYER_JOINED` / `PLAYER_LEFT` toast notifications
+- [x] Persist auth session across page refresh
 
 **Phase 1 done when:** Two people can open the app in different browsers, join the same campaign via invite code, see each other in the party list, and send chat messages in real time.
 
@@ -494,13 +497,13 @@ Respond with 2–4 paragraphs of narration only. No meta-commentary.
 **Goal: players can explore, roll dice, manage inventory, and track quests**
 
 #### Dice engine
-- [ ] Build `diceEngine.ts` — `rollDice(type, modifier)` using `crypto.randomInt`
-- [ ] Add `DICE_REQUEST` WebSocket handler on server
-- [ ] Server rolls dice, writes result to `dice_rolls` table
-- [ ] Server broadcasts `DICE_RESULT` to all room members
-- [ ] Build DicePanel UI — buttons for d4/d6/d8/d10/d12/d20/d100
-- [ ] Show roll history in chat feed with roller name and context
-- [ ] Add modifier input to dice panel (+/- value before roll)
+- [x] Build `diceEngine.ts` — `rollDice(type, modifier)` using `crypto.randomInt`
+- [x] Add `DICE_REQUEST` WebSocket handler on server
+- [x] Server rolls dice, writes result to `dice_rolls` table
+- [x] Server broadcasts `DICE_RESULT` to all room members
+- [x] Build DicePanel UI — buttons for d4/d6/d8/d10/d12/d20/d100
+- [x] Show roll history in chat feed with roller name and context
+- [x] Add modifier input to dice panel (+/- value before roll)
 
 #### Action processor
 - [ ] Build `actionProcessor.ts` — receives raw action text, classifies it
