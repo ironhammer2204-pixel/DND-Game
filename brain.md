@@ -9,10 +9,11 @@ Last updated: 2026-06-08
 - GitHub repo: `https://github.com/ironhammer2204-pixel/DND-Game`
 - Supabase project: `fvgpsqksclhyvaeveaus`
 - `brain.md` must be updated after every meaningful fix, feature, schema change, setup change, or architecture decision.
+- **Database Migrations**: All 9 local database migrations (including the initial schema, nemesis system, world engine, faction pressure, bug fixes, NPC agendas, auth triggers, encyclopedia, and balancing engine) have been fully applied to the remote Supabase instance.
+- **Auth & Tunnel Hardening**: Backend auth routes have been migrated to support Cloudflare tunnel compatibility with robust dynamic CORS fixes. The backend `/api/auth/google` route now returns a JSON URL redirect payload instead of triggering an direct browser redirection, bypassing any Pinggy/Cloudflare browser interstitial screen warnings.
+- **Dynamic API Resolution**: The frontend resolves the backend URL dynamically by checking available api candidates (including the configured `VITE_API_URL`, local/production origin fallback, and standard local port `3001`) with `/health` checks to handle tunnel changes gracefully.
 - The app is a live web game, not a wireframe. Auth, lobby, campaign join/create, game room flow, dice, combat, inventory, quests, world travel, encyclopedia, balance dashboard, faction control, nemesis system, and reconnect support are all present in code.
-- Phase 1, Phase 2, and Phase 3 are implemented in code.
-- Phase 4 is the remaining polish, deployment hardening, and UX refinement pass.
-- Auth now has a more resilient API base resolver on the client, and Google OAuth uses an explicit redirect target instead of guessing localhost. Current tunnel for local/public access is the Cloudflare URL `https://purchases-removal-marsh-reproduction.trycloudflare.com`.
+- Phase 1, Phase 2, Phase 3, and Phase 4 systems are implemented in code. Remaining work is final testing and deployment.
 
 ## Product Snapshot
 
@@ -173,6 +174,8 @@ Remaining work is mostly UI refinement, mobile tuning, hardening, and deploy qua
 
 ## Environment Variables
 
+See [ENV_SETUP.md](file:///Users/Ayan/Documents/DNDGame/files/ENV_SETUP.md) for full setup instructions.
+
 ```text
 Server:
 DATABASE_URL=postgresql://...
@@ -182,10 +185,15 @@ SUPABASE_SERVICE_KEY=...
 GROQ_API_KEY=...
 PORT=3001
 NODE_ENV=production
+FRONTEND_URL=https://ironhammer.vercel.app
 
-Client:
-VITE_API_URL=https://purchases-removal-marsh-reproduction.trycloudflare.com
-VITE_WS_URL=wss://purchases-removal-marsh-reproduction.trycloudflare.com
+Client (Local Dev):
+VITE_API_URL=http://localhost:3001
+VITE_WS_URL=ws://localhost:3001
+
+Client (Vercel Prod):
+VITE_API_URL=https://your-tunnel.trycloudflare.com
+VITE_WS_URL=wss://your-tunnel.trycloudflare.com
 VITE_SUPABASE_URL=https://xxx.supabase.co
 VITE_SUPABASE_ANON_KEY=...
 ```

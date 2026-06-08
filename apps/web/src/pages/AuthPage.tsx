@@ -21,6 +21,21 @@ export function AuthPage() {
     setTimeout(() => setShaking(false), 600);
   };
 
+  const getErrorMessage = (err: any): string => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === "string") return err;
+    if (err && typeof err === "object") {
+      if (typeof err.message === "string") return err.message;
+      if (typeof err.error === "string") return err.error;
+      try {
+        return JSON.stringify(err);
+      } catch {
+        return "An unknown error occurred";
+      }
+    }
+    return "An unknown error occurred";
+  };
+
   const handleAuth = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setAuthError("");
@@ -39,7 +54,10 @@ export function AuthPage() {
           body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Login failed");
+        if (!res.ok) {
+          const errMsg = typeof data.error === "string" ? data.error : (data.message || data.error?.message || "Login failed");
+          throw new Error(errMsg);
+        }
         setSession(data.session.access_token, data.user);
       } else {
         const res = await fetch(`${apiUrl}/api/auth/register`, {
@@ -53,15 +71,17 @@ export function AuthPage() {
           body: JSON.stringify({ email, password, username }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Registration failed");
+        if (!res.ok) {
+          const errMsg = typeof data.error === "string" ? data.error : (data.message || data.error?.message || "Registration failed");
+          throw new Error(errMsg);
+        }
         setActiveTab("login");
         setPassword("");
         setAuthError("Account created! Please sign in.");
         return;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Authentication failed";
-      setAuthError(msg);
+      setAuthError(getErrorMessage(err));
       triggerShake();
     } finally {
       setLoading(false);
@@ -91,12 +111,13 @@ export function AuthPage() {
 
       const data = await res.json();
       if (!res.ok || !data.url) {
-        throw new Error(data.error || "Unable to start Google sign-in");
+        const errMsg = typeof data.error === "string" ? data.error : (data.message || data.error?.message || "Unable to start Google sign-in");
+        throw new Error(errMsg);
       }
 
       window.location.assign(data.url);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Unable to start Google sign-in");
+      setAuthError(getErrorMessage(err));
       setGoogleLoading(false);
       triggerShake();
     }
