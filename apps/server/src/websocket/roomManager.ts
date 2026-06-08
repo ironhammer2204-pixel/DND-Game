@@ -16,6 +16,10 @@ export class RoomManager {
   // Map of ws -> Participant (for quick lookup on disconnect/message)
   private static connections = new Map<WebSocket, Participant>();
 
+  public static getConnectionCount(): number {
+    return this.connections.size;
+  }
+
   public static addParticipant(
     campaignId: string,
     userId: string,

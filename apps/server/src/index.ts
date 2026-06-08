@@ -17,6 +17,7 @@ import { authenticateSocket, handleWSMessage } from "./websocket/eventHandlers";
 import { RoomManager } from "./websocket/roomManager";
 import { runBalancingCycle } from "./game/balancingEngine";
 import { narrationEmitter } from "./ai/narrationEmitter";
+import { startBoss, stopBoss, dmService } from "./ai/dmService";
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -69,11 +70,32 @@ app.get("/api/me", authMiddleware, (req: AuthenticatedRequest, res) => {
   res.json({ user: req.user });
 });
 
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    service: "dnd-game-server",
-    racesCount: RACES.length,
+app.get("/health", async (_req, res) => {
+  const dbStart = Date.now();
+  let dbStatus = "ok";
+  let dbLatency = 0;
+  try {
+    await pool.query("SELECT 1");
+    dbLatency = Date.now() - dbStart;
+  } catch (err) {
+    dbStatus = "error";
+  }
+
+  const groqEnabled = dmService.isEnabled();
+  const queueDepthValue = groqEnabled ? await dmService.queueDepth() : 0;
+  const wsCount = RoomManager.getConnectionCount();
+  const lastSuccess = dmService.getLastSuccess();
+
+  const isHealthy = dbStatus === "ok";
+
+  res.status(isHealthy ? 200 : 500).json({
+    status: isHealthy ? "healthy" : "unhealthy",
+    checks: {
+      database: { status: dbStatus, latency_ms: dbLatency },
+      groq_api: { status: groqEnabled ? "ok" : "disabled", last_success: lastSuccess },
+      queue: { depth: queueDepthValue, max_depth: 100 },
+      ws_connections: wsCount,
+    },
   });
 });
 
@@ -159,6 +181,12 @@ async function shutdown(signal: NodeJS.Signals, activeServer: Server, activeWsSe
   shuttingDown = true;
   console.log(`${signal} received. Closing server, WebSocket connections, and database pool.`);
 
+  try {
+    await stopBoss();
+  } catch (err) {
+    console.error("Error stopping pg-boss on shutdown:", err);
+  }
+
   await new Promise<void>((resolve) => {
     activeServer.close(() => resolve());
   });
@@ -187,6 +215,12 @@ server.listen(port, async () => {
     console.log(`Successfully connected to the database. Server time: ${dbCheck.rows[0].now}`);
   } catch (err) {
     console.error("Failed to connect to the database on startup:", err);
+  }
+
+  try {
+    await startBoss();
+  } catch (err) {
+    console.error("Failed to start pg-boss on startup:", err);
   }
 
   // -------------------------------------------------------------------------

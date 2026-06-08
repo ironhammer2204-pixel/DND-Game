@@ -9,11 +9,12 @@ Last updated: 2026-06-08
 - GitHub repo: `https://github.com/ironhammer2204-pixel/DND-Game`
 - Supabase project: `fvgpsqksclhyvaeveaus`
 - `brain.md` must be updated after every meaningful fix, feature, schema change, setup change, or architecture decision.
-- **Database Migrations**: All 9 local database migrations (including the initial schema, nemesis system, world engine, faction pressure, bug fixes, NPC agendas, auth triggers, encyclopedia, and balancing engine) have been fully applied to the remote Supabase instance.
-- **Auth & Tunnel Hardening**: Backend auth routes have been migrated to support Cloudflare tunnel compatibility with robust dynamic CORS fixes. The backend `/api/auth/google` route now returns a JSON URL redirect payload instead of triggering an direct browser redirection, bypassing any Pinggy/Cloudflare browser interstitial screen warnings.
-- **Dynamic API Resolution**: The frontend resolves the backend URL dynamically by checking available api candidates (including the configured `VITE_API_URL`, local/production origin fallback, and standard local port `3001`) with `/health` checks to handle tunnel changes gracefully.
-- The app is a live web game, not a wireframe. Auth, lobby, campaign join/create, game room flow, dice, combat, inventory, quests, world travel, encyclopedia, balance dashboard, faction control, nemesis system, and reconnect support are all present in code.
-- Phase 1, Phase 2, Phase 3, and Phase 4 systems are implemented in code. Remaining work is final testing and deployment.
+- **Database Migrations**: All 13 local database migrations (including schema fixes, nemesis system, behavior/world engines, faction pressure, bug fixes, NPC agendas, auth triggers, encyclopedia, balancing engine, RLS/index hardening, rumours table cleanup, polymorphic integrity validation, and era_id indexing) have been fully applied to the remote Supabase instance.
+- **Async Queue & Workers**: AI narration requests and player intent classifications are processed asynchronously via a `pg-boss` queue backed by PostgreSQL. The workers support array-based jobs and respect concurrency limits (localConcurrency of 1).
+- **Fallback & Output Repair**: Narration outputs from Groq are filtered to preserve the "AI is never source of truth" invariant. Filtered narrations are validated and cleaned of formatting/grammatical issues, reverting to high-quality fallback narrations if empty or broken.
+- **Automated Validation**: A local migration linter script (`scripts/lint-migrations.js`) verifies database migrations for RLS compliance, foreign-key indexing, case-insensitive naming conflicts, and `updated_at` triggers.
+- **Enhanced Health Monitoring**: The `/health` endpoint checks DB latency, Groq API availability, pg-boss queue depth, active WebSocket connection counts, and the last narration success timestamp.
+- **Test Coverage**: High-coverage Vitest tests verify narration filtration, fallback execution, and queue job delegation (95 passing tests total).
 
 ## Product Snapshot
 
