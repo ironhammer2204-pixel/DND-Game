@@ -95,8 +95,8 @@ async function seedStartingWorld(client: PoolClient, campaignId: string) {
     `INSERT INTO public.npcs (campaign_id, name, role, location_id, is_alive, relationship_map, base_stats)
      VALUES
      ($1, $2, $3, $4, true, $5, $6),
-     ($1, $7, $8, $9, true, $10, $11),
-     ($1, $12, $13, $14, true, $15, $16)`,
+     ($7, $8, $9, $10, true, $11, $12),
+     ($13, $14, $15, $16, true, $17, $18)`,
     [
       campaignId, 'Eldric Ironhammer', 'Blacksmith', townId, '{}', JSON.stringify({ str: 18, cha: 12 }),
       campaignId, 'Mira Shadowstep', 'Scout', wildernessId, '{}', JSON.stringify({ dex: 16, int: 14 }),

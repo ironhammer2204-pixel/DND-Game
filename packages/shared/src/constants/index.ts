@@ -126,8 +126,8 @@ export const SKILL_TO_ATTRIBUTE: Record<SkillName, AttributeName> = {
   survival: "wis",
 };
 
-export * from "./monsters";
-export * from "./npcTemplates";
-export * from "./locationTemplates";
-export * from "./questTemplates";
+export * from "./monsters.js";
+export * from "./npcTemplates.js";
+export * from "./locationTemplates.js";
+export * from "./questTemplates.js";
 
