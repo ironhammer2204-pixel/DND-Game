@@ -1,0 +1,158 @@
+// useAuth.ts — Fixed for Vercel + Pinggy setup
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "../lib/supabaseClient";
+
+const API_URL = import.meta.env.VITE_API_URL; // e.g., https://fzxyr-...pinggy-free.link
+
+export function useAuth() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // ─── Google Sign In — FIXED: Always use JSON response, never follow redirects ───
+  const signInWithGoogle = useCallback(async () => {
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback`;
+
+      // CRITICAL: Add X-Pinggy-No-Screen header to bypass interstitial
+      const response = await fetch(`${API_URL}/api/auth/google?redirect_to=${encodeURIComponent(redirectTo)}`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+          "X-Pinggy-No-Screen": "true", // Bypasses Pinggy browser interstitial
+        },
+        // DO NOT use redirect: "follow" — we want the JSON response, not the redirect
+        redirect: "manual",
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Network error" }));
+        throw new Error(error.error || "Failed to start Google sign-in");
+      }
+
+      const { url } = await response.json();
+
+      // Now redirect the browser to Google's OAuth page
+      window.location.href = url;
+    } catch (err) {
+      console.error("Google sign-in error:", err);
+      throw err;
+    }
+  }, []);
+
+  // ─── Email/Password Login ───
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await fetch(`${API_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Origin": window.location.origin,
+      },
+      credentials: "include", // Send cookies if using cookie-based auth
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Login failed");
+    }
+
+    const data = await response.json();
+
+    // Store session in Supabase client
+    if (data.session) {
+      await supabase.auth.setSession(data.session);
+    }
+
+    setUser(data.user);
+    return data;
+  }, []);
+
+  // ─── Email/Password Register ───
+  const register = useCallback(async (email: string, password: string, username: string) => {
+    const response = await fetch(`${API_URL}/api/auth/register`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Origin": window.location.origin,
+      },
+      body: JSON.stringify({ email, password, username }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Registration failed");
+    }
+
+    const data = await response.json();
+
+    if (data.session) {
+      await supabase.auth.setSession(data.session);
+    }
+
+    setUser(data.user);
+    return data;
+  }, []);
+
+  // ─── Logout ───
+  const logout = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`,
+          "Origin": window.location.origin,
+        },
+      });
+    }
+
+    await supabase.auth.signOut();
+    setUser(null);
+  }, []);
+
+  // ─── Load user on mount ───
+  useEffect(() => {
+    const loadUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        try {
+          const response = await fetch(`${API_URL}/api/auth/me`, {
+            headers: {
+              "Authorization": `Bearer ${session.access_token}`,
+              "Origin": window.location.origin,
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setUser(data.user);
+          } else {
+            // Token expired or invalid
+            await supabase.auth.signOut();
+          }
+        } catch (err) {
+          console.error("Failed to load user:", err);
+        }
+      }
+
+      setLoading(false);
+    };
+
+    loadUser();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        setUser(null);
+      } else if (session?.user) {
+        setUser(session.user);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { user, loading, signInWithGoogle, login, register, logout };
+}
