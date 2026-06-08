@@ -12,7 +12,7 @@ Last updated: 2026-06-08
 - The app is a live web game, not a wireframe. Auth, lobby, campaign join/create, game room flow, dice, combat, inventory, quests, world travel, encyclopedia, balance dashboard, faction control, nemesis system, and reconnect support are all present in code.
 - Phase 1, Phase 2, and Phase 3 are implemented in code.
 - Phase 4 is the remaining polish, deployment hardening, and UX refinement pass.
-- Auth now has a more resilient API base resolver on the client, and Google OAuth uses an explicit redirect target instead of guessing localhost.
+- Auth now has a more resilient API base resolver on the client, and Google OAuth uses an explicit redirect target instead of guessing localhost. Current tunnel for local/public access is the Cloudflare URL `https://purchases-removal-marsh-reproduction.trycloudflare.com`.
 
 ## Product Snapshot
 
@@ -184,8 +184,8 @@ PORT=3001
 NODE_ENV=production
 
 Client:
-VITE_API_URL=https://your-app.onrender.com
-VITE_WS_URL=wss://your-app.onrender.com
+VITE_API_URL=https://purchases-removal-marsh-reproduction.trycloudflare.com
+VITE_WS_URL=wss://purchases-removal-marsh-reproduction.trycloudflare.com
 VITE_SUPABASE_URL=https://xxx.supabase.co
 VITE_SUPABASE_ANON_KEY=...
 ```
