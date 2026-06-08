@@ -11,10 +11,11 @@ if (!connectionString) {
   console.warn("WARNING: DATABASE_URL is not set in environment variables.");
 }
 
+const cleanConnectionString = connectionString?.replace(/[?&]sslmode=[^&]+/g, "");
 const isLocal = connectionString?.includes("localhost") || connectionString?.includes("127.0.0.1") || connectionString?.includes("::1");
 
 export const pool = new Pool({
-  connectionString,
+  connectionString: cleanConnectionString,
   ssl: isLocal ? undefined : { rejectUnauthorized: false },
 });
 
