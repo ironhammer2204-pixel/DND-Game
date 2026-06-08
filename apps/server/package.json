@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"TSC,NODE\" -c \"cyan.bold,green.bold\" \"tsc --watch\" \"node --watch dist/index.js\",
     "start": "node dist/index.js",
     "lint": "eslint src/**/*.ts",
     "test": "vitest run",
@@ -32,6 +32,7 @@
     "@types/pg": "^8.20.0",
     "@types/ws": "^8.5.10",
     "@vitest/coverage-v8": "^4.1.8",
+    "concurrently": "^10.0.3",
     "typescript": "^5.0.0",
     "vitest": "^4.1.8"
   }

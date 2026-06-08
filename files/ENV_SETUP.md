@@ -64,7 +64,8 @@ To expose your local port `3001` (backend port) via a Cloudflare Tunnel:
 ### Option A: Using the official cloudflared CLI (Recommended)
 If you have `cloudflared` installed:
 ```bash
-cloudflared tunnel --url http://localhost:3001
+# IMPORTANT: Use 127.0.0.1 instead of localhost to prevent IPv6 [::1] connection refused issues:
+cloudflared tunnel --url http://127.0.0.1:3001
 ```
 
 ### Option B: Using quick tunnel via npx
@@ -75,7 +76,7 @@ npx --yes localtunnel --port 3001
 npx @cloudflare/next-on-pages tunnel --port 3001
 ```
 
-*(Note: Cloudflare Tunnels do not show any warning page/browser interstitial by default, so you do not need special headers to bypass them like Pinggy/Ngrok did, though they remain supported in our code).*
+*(Note: Cloudflare Tunnels do not show any warning page/browser interstitial by default. Using http://127.0.0.1:3001 instead of http://localhost:3001 is highly recommended because cloudflared will often try to resolve localhost to [::1] (IPv6) which Node by default refuses, resulting in a connection error).*
 
 
 ## 5. Vercel Deployment Settings
