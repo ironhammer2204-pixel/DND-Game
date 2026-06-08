@@ -23,7 +23,34 @@ const port = process.env.PORT || 3001;
 let shuttingDown = false;
 
 app.use(helmet());
-app.use(cors());
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true);
+
+      const isAllowed =
+        origin.startsWith("http://localhost:") ||
+        origin.endsWith(".vercel.app") ||
+        /trycloudflare\.com|run\.pinggy-free\.link|ngrok/i.test(origin);
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Pinggy-No-Screen",
+      "ngrok-skip-browser-warning",
+      "bypass-tunnel-reminder",
+    ],
+  })
+);
 app.use(express.json());
 
 app.use("/api/auth", authRouter);

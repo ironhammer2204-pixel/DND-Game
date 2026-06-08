@@ -21,14 +21,6 @@ function authErrorStatus(message: string, fallback: number): number {
   return fallback;
 }
 
-// ─── CORS helper ───
-function setAuthCorsHeaders(res: any, origin: string) {
-  res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Pinggy-No-Screen");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-}
-
 function getTrustedFrontendOrigin(req: { query: Record<string, unknown>; headers: Record<string, unknown> }): string {
   const configuredOrigin = process.env.FRONTEND_URL || process.env.CLIENT_ORIGIN || process.env.VITE_APP_URL;
   const requested = typeof req.query.redirect_to === "string" ? req.query.redirect_to : "";
@@ -58,18 +50,8 @@ function getTrustedFrontendOrigin(req: { query: Record<string, unknown>; headers
   return configuredOrigin || "http://localhost:5173";
 }
 
-// ─── OPTIONS preflight handler for all auth routes ───
-router.options("*", (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-  res.status(204).send();
-});
-
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-
   const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
   const password = typeof req.body.password === "string" ? req.body.password : "";
   const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
@@ -115,9 +97,6 @@ router.post("/register", async (req, res) => {
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-
   const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
   const password = typeof req.body.password === "string" ? req.body.password : "";
 
@@ -159,9 +138,6 @@ router.post("/login", async (req, res) => {
 
 // POST /api/auth/logout
 router.post("/logout", async (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
@@ -185,10 +161,8 @@ router.post("/logout", async (req, res) => {
 
 // GET /api/auth/google — FIX: Always return JSON for API clients, never redirect
 router.get("/google", async (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-
   try {
+    const origin = getTrustedFrontendOrigin(req);
     const redirectTo = `${origin}/auth/callback`;
 
     // DEBUG: Log what we're sending to Supabase
@@ -207,7 +181,6 @@ router.get("/google", async (req, res) => {
     }
 
     // ALWAYS return JSON — let frontend handle the redirect
-    // This bypasses Pinggy interstitial issues completely
     return res.json({ url: data.url, redirectTo });
   } catch (error) {
     console.error("Google Auth error:", error);
@@ -217,9 +190,6 @@ router.get("/google", async (req, res) => {
 
 // GET /api/auth/me
 router.get("/me", async (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
@@ -257,9 +227,6 @@ router.get("/me", async (req, res) => {
 
 // POST /api/auth/exchange
 router.post("/exchange", async (req, res) => {
-  const origin = getTrustedFrontendOrigin(req);
-  setAuthCorsHeaders(res, origin);
-
   const code = typeof req.body.code === "string" ? req.body.code : "";
   if (!code) {
     return res.status(400).json({ error: "Missing authorization code" });
