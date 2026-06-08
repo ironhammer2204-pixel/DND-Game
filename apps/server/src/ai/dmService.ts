@@ -318,6 +318,18 @@ export async function startBoss(): Promise<void> {
   }
   boss.on("error", (error: any) => console.error("[pg-boss] error:", error));
   await boss.start();
+
+  try {
+    await boss.createQueue("narration");
+  } catch (err) {
+    // Ignore duplicate or existing queue errors
+  }
+  try {
+    await boss.createQueue("intent-classification");
+  } catch (err) {
+    // Ignore duplicate or existing queue errors
+  }
+
   await boss.work("narration", { localConcurrency: 1 }, handleNarrationJob);
   await boss.work("intent-classification", { localConcurrency: 1 }, handleIntentClassificationJob);
   console.log("[dmService] pg-boss queue started and workers registered");
