@@ -11,9 +11,11 @@ if (!connectionString) {
   console.warn("WARNING: DATABASE_URL is not set in environment variables.");
 }
 
+const isLocal = connectionString?.includes("localhost") || connectionString?.includes("127.0.0.1") || connectionString?.includes("::1");
+
 export const pool = new Pool({
   connectionString,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+  ssl: isLocal ? undefined : { rejectUnauthorized: false },
 });
 
 pool.on("error", (err) => {
