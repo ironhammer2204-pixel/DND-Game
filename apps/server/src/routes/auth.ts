@@ -47,7 +47,7 @@ function getTrustedFrontendOrigin(req: { query: Record<string, unknown>; headers
     }
   }
 
-  return configuredOrigin || "http://localhost:5173";
+  return configuredOrigin || "http://localhost:3000";
 }
 
 // POST /api/auth/register
