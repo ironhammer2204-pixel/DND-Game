@@ -3,6 +3,10 @@ import cors from "cors";
 import helmet from "helmet";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
+import dns from "dns";
+
+// Force IPv4 resolution first to bypass broken IPv6 routing (e.g. Supabase AAAA records)
+dns.setDefaultResultOrder("ipv4first");
 import { RACES } from "@dnd/shared";
 import { pool } from "./db/client";
 import authRouter from "./routes/auth";
