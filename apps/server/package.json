@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "concurrently -k -p \"[{name}]\" -n \"TSC,NODE\" -c \"cyan.bold,green.bold\" \"tsc --watch\" \"node --watch dist/index.js\"",
-    "start": "node dist/index.js",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"TSC,NODE\" -c \"cyan.bold,green.bold\" \"tsc --watch\" \"node --dns-result-order=ipv4first --watch dist/index.js\"",
+    "start": "node --dns-result-order=ipv4first dist/index.js",
     "lint": "eslint src/**/*.ts",
     "test": "vitest run",
     "test:watch": "vitest",
