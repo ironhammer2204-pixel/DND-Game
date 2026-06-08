@@ -1,0 +1,133 @@
+/* ============================================================
+   IRONHAMMER — Dark Fantasy RPG Game Theme
+   This file is ONLY imported inside the game shell (.game-shell).
+   Auth and Lobby pages are NOT affected by any styles here.
+   ============================================================ */
+
+/* Google Fonts — must precede other @import rules */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+/* ── Dark Fantasy Design Tokens ─────────────────────────────── */
+:root {
+  /* Core palette */
+  --obsidian: #0A0A0F;
+  --elevated: #12121A;
+  --blood-ember: #C73E1D;
+  --runic-gold: #D4AF37;
+  --forest-green: #4A7C59;
+  --parchment: #F5E6C8;
+  --muted-text: #9B9B9B;
+  --deep-crimson: #8B0000;
+  --arcane-blue: #4A90E2;
+
+  /* Typography with fallback stacks */
+  --font-header: 'Cinzel', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+  --font-flavor: 'Cormorant Garamond', 'Garamond', 'Times New Roman', serif;
+
+  /* Semantic mapping */
+  --game-background: var(--obsidian);
+  --game-foreground: var(--parchment);
+  --game-card: var(--elevated);
+  --game-card-foreground: var(--parchment);
+  --game-primary: var(--runic-gold);
+  --game-primary-foreground: var(--obsidian);
+  --game-accent: var(--blood-ember);
+  --game-accent-foreground: var(--parchment);
+  --game-muted: #1A1A24;
+  --game-muted-foreground: var(--muted-text);
+  --game-destructive: var(--deep-crimson);
+  --game-destructive-foreground: var(--parchment);
+  --game-border: rgba(212, 175, 55, 0.15);
+  --game-input: rgba(212, 175, 55, 0.1);
+  --game-ring: var(--runic-gold);
+
+  /* Radii */
+  --game-radius: 0.5rem;
+}
+
+/* ── Game Shell Scoped Styles ───────────────────────────────── */
+.game-shell {
+  font-family: var(--font-body);
+  background-color: var(--obsidian);
+  color: var(--parchment);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scoped scrollbar */
+.game-shell ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.game-shell ::-webkit-scrollbar-track {
+  background: var(--obsidian);
+}
+.game-shell ::-webkit-scrollbar-thumb {
+  background: var(--elevated);
+  border-radius: 4px;
+  border: 2px solid var(--obsidian);
+}
+.game-shell ::-webkit-scrollbar-thumb:hover {
+  background: var(--game-muted);
+}
+
+/* Scoped focus-visible */
+.game-shell *:focus-visible {
+  outline: 2px solid var(--runic-gold);
+  outline-offset: 2px;
+}
+
+/* Scoped typography */
+.game-shell h1,
+.game-shell h2,
+.game-shell h3,
+.game-shell h4 {
+  font-family: var(--font-header);
+  color: var(--parchment);
+  letter-spacing: 0.5px;
+  line-height: 1.3;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .game-shell *,
+  .game-shell *::before,
+  .game-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Game Animations ────────────────────────────────────────── */
+@keyframes game-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes game-pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(212, 175, 55, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(212, 175, 55, 0.45); }
+}
+
+@keyframes game-hp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes game-slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.game-animate-fade-in {
+  animation: game-fade-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.game-animate-slide-up {
+  animation: game-slide-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

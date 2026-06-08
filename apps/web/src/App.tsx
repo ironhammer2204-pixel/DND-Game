@@ -2,7 +2,7 @@ import { useAuthStore } from "./stores/authStore";
 import { useGameStore } from "./stores/gameStore";
 import { AuthPage } from "./pages/AuthPage";
 import { LobbyPage } from "./pages/LobbyPage";
-import { GamePage } from "./pages/GamePage";
+import { GameRouter } from "./router/gameRouter";
 
 import { AuthCallback } from "./pages/AuthCallback";
 
@@ -15,7 +15,7 @@ function App() {
   }
 
   if (!token || !user) return <AuthPage />;
-  if (activeCampaign) return <GamePage />;
+  if (activeCampaign) return <GameRouter />;
   return <LobbyPage />;
 }
 
