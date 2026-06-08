@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { pool } from "../db/client";
 import { dmService } from "../ai/dmService";
+import { NemesisContext } from "../ai/promptTemplates";
 import { buildCampaignSnapshot, getLocationContext, getActiveNemesisContext, getCampaignLocationId, getPartyContext } from "../ai/contextBuilder";
 import { MONSTERS, CombatParticipant, CombatEncounter } from "@dnd/shared";
 import { rollDice, rollWithAdvantage, rollWithDisadvantage } from "./diceEngine";
@@ -225,12 +226,34 @@ export async function startCombat(
       action_type: "combat_start",
       text: `Combat initiated! Round 1 begins. Initiative order: ${turnOrder.map((p) => `${p.name} (${p.initiative})`).join(", ")}`,
     };
-    await client.query(
-      "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2)",
+    const logRes = await client.query(
+      "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2) RETURNING id",
       [campaignId, JSON.stringify(startPayload)]
     );
+    const startEventLogId = logRes.rows[0].id;
 
     await client.query("COMMIT");
+
+    if (dmService.isEnabled()) {
+      const locationId = await getCampaignLocationId(pool, campaignId);
+      const location = locationId ? await getLocationContext(pool, locationId) : null;
+      const nemesis = await getActiveNemesisContext(pool, campaignId);
+      const party = await getPartyContext(pool, campaignId);
+
+      if (location) {
+        dmService.enqueueCombatStart(pool, startEventLogId, campaignId, {
+          campaignId,
+          party,
+          location,
+          npcs: [],
+          nemesis,
+          enemyNames: encounter.participants
+            .filter((p) => p.type === "enemy")
+            .map((p) => p.name),
+          initiativeOrder: encounter.turn_order.map((p) => p.name),
+        });
+      }
+    }
 
     // Start background processing for offline players or automated turns
     processActiveTurn(campaignId, encounter.id);
@@ -349,17 +372,11 @@ export async function processCombatAction(
         ]
       );
       const narrationEventId = narrationLogRes.rows[0].id;
+      const party = await getPartyContext(client, campaignId);
 
       dmService.enqueueCombatRound(pool, narrationEventId, campaignId, {
-        party: encounter.participants
-          .filter((p) => p.type === "player")
-          .map((p) => ({
-            name: p.name,
-            race: "human",
-            class_name: "fighter",
-            hp_current: p.hp_current,
-            hp_max: p.hp_max,
-          })),
+        campaignId,
+        party,
         location,
         nemesis,
         roundNumber: encounter.current_turn_index + 1,
@@ -476,15 +493,36 @@ export async function rollDeathSave(campaignId: string, userId: string): Promise
       successes: activeParticipant.death_save_successes,
       failures: activeParticipant.death_save_failures,
     };
-    await client.query(
-      "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'combat', $2, $3)",
+    const logRes = await client.query(
+      "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'combat', $2, $3) RETURNING id",
       [campaignId, activeParticipant.id, JSON.stringify(logPayload)]
     );
+    const deathSaveEventLogId = logRes.rows[0].id;
 
     // Advance turn
     await advanceTurn(client, encounter);
 
     await client.query("COMMIT");
+
+    if (dmService.isEnabled()) {
+      const party = await getPartyContext(pool, campaignId);
+      const deathSaveResult = characterDead
+        ? "death"
+        : activeParticipant.conditions.includes("stable")
+        ? "stabilised"
+        : roll.raw >= 10
+        ? "success"
+        : "failure";
+
+      dmService.enqueueDeathSave(pool, deathSaveEventLogId, campaignId, {
+        campaignId,
+        party,
+        characterName: activeParticipant.name,
+        result: deathSaveResult,
+        successes: activeParticipant.death_save_successes || 0,
+        failures: activeParticipant.death_save_failures || 0,
+      });
+    }
 
     RoomManager.broadcastToRoom(campaignId, "COMBAT_UPDATE", { encounter });
     processActiveTurn(campaignId, encounter.id);
@@ -756,10 +794,37 @@ async function resolveCombatWithVictory(client: any, encounter: CombatEncounter)
   }
 
   const logPayload = { action_type: "combat_victory", text, xp_gained: xpPerPlayer };
-  await client.query(
-    "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2)",
+  const victoryLogRes = await client.query(
+    "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2) RETURNING id",
     [encounter.campaign_id, JSON.stringify(logPayload)]
   );
+  const victoryEventLogId = victoryLogRes.rows[0].id;
+
+  if (dmService.isEnabled()) {
+    const snapshot = await buildCampaignSnapshot(client, encounter.campaign_id);
+    const nemesisParticipant = encounter.participants.find((p) => p.type === "enemy" && p.nemesis_id);
+    let nemesisCtx: NemesisContext | null = null;
+    if (nemesisParticipant) {
+      nemesisCtx = {
+        name: nemesisParticipant.name,
+        tier: nemesisParticipant.nemesis_tier ?? "grunt",
+        personality_preset: nemesisParticipant.personality ?? "cruel",
+      };
+    }
+    const anyUnconscious = encounter.participants.some(
+      (p) => p.type === "player" && p.hp_current <= 0
+    );
+
+    dmService.enqueueCombatVictory(pool, victoryEventLogId, encounter.campaign_id, {
+      campaignId: encounter.campaign_id,
+      party: snapshot.party,
+      location: snapshot.location ?? { name: "unknown", description: "" },
+      quests: snapshot.quests,
+      nemesis: nemesisCtx,
+      anyPlayerUnconscious: anyUnconscious,
+      nemesisFled: nemesisParticipant ? (nemesisParticipant.hp_current > 0) : false,
+    });
+  }
 }
 
 async function resolveCombatWithDefeat(client: any, encounter: CombatEncounter): Promise<void> {
@@ -769,10 +834,30 @@ async function resolveCombatWithDefeat(client: any, encounter: CombatEncounter):
 
   const text = `Combat Resolved... Total Defeat. The party has fallen.`;
   const logPayload = { action_type: "combat_defeat", text };
-  await client.query(
-    "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2)",
+  const defeatLogRes = await client.query(
+    "INSERT INTO public.event_log (campaign_id, type, payload) VALUES ($1, 'combat', $2) RETURNING id",
     [encounter.campaign_id, JSON.stringify(logPayload)]
   );
+  const defeatEventLogId = defeatLogRes.rows[0].id;
+
+  if (dmService.isEnabled()) {
+    const snapshot = await buildCampaignSnapshot(client, encounter.campaign_id);
+    const nemesisParticipant = encounter.participants.find((p) => p.type === "enemy" && p.nemesis_id);
+    let nemesisCtx: NemesisContext | null = null;
+    if (nemesisParticipant) {
+      nemesisCtx = {
+        name: nemesisParticipant.name,
+        tier: nemesisParticipant.nemesis_tier ?? "grunt",
+        personality_preset: nemesisParticipant.personality ?? "cruel",
+      };
+    }
+    dmService.enqueueCombatDefeat(pool, defeatEventLogId, encounter.campaign_id, {
+      campaignId: encounter.campaign_id,
+      party: snapshot.party,
+      location: snapshot.location ?? { name: "unknown", description: "" },
+      nemesis: nemesisCtx,
+    });
+  }
 }
 
 export function processActiveTurn(campaignId: string, encounterId: string) {

@@ -92,6 +92,7 @@ export async function tickNemesisMovement(
             const snapshot = await buildCampaignSnapshot(client, campaignId);
             if (snapshot.nemesis && snapshot.location) {
               dmService.enqueueNemesisAmbush(pool, logRes.rows[0].id, campaignId, {
+                campaignId,
                 party: snapshot.party,
                 location: snapshot.location,
                 nemesis: snapshot.nemesis,
@@ -746,6 +747,7 @@ export async function checkHiddenClassUnlocks(
           if (dmService.isEnabled() && logRes.rows[0].id) {
             const snapshot = await buildCampaignSnapshot(client, campaignId);
             dmService.enqueueAction(pool, logRes.rows[0].id, campaignId, {
+              campaignId,
               party: snapshot.party,
               location: snapshot.location ?? { name: "unknown", description: "" },
               npcs: snapshot.npcs,

@@ -104,7 +104,7 @@ export function buildNemesisBlock(nemesis: NemesisContext | null): string {
   if (!nemesis) return "";
   return (
     `NEMESIS PRESENT: ${nemesis.name}, ${nemesis.tier} tier — ${nemesis.personality_preset} disposition.` +
-    (nemesis.epithets?.length ? ` Known as "${nemesis.epithets[0]}".` : "")
+    (nemesis.epithet ? ` Known as "${nemesis.epithet}".` : "")
   );
 }
 
@@ -277,7 +277,7 @@ export interface NpcContext {
 
 export interface QuestContext {
   title: string;
-  status: "active" | "completed" | "failed";
+  status: "active" | "complete" | "failed";
   current_objective: string;
 }
 
@@ -289,10 +289,11 @@ export interface NemesisContext {
   name: string;
   tier: string;
   personality_preset: string;
-  epithets?: string[];
+  epithet?: string;
 }
 
 export interface CombatNarrationContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   npcs: NpcContext[];
@@ -302,6 +303,7 @@ export interface CombatNarrationContext {
 }
 
 export interface CombatRoundContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   nemesis: NemesisContext | null;
@@ -310,6 +312,7 @@ export interface CombatRoundContext {
 }
 
 export interface CombatVictoryContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   quests: QuestContext[];
@@ -319,12 +322,14 @@ export interface CombatVictoryContext {
 }
 
 export interface CombatDefeatContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   nemesis: NemesisContext | null;
 }
 
 export interface DeathSaveContext {
+  campaignId: string;
   party: PartyContext[];
   characterName: string;
   result: "success" | "failure" | "stabilised" | "death";
@@ -333,6 +338,7 @@ export interface DeathSaveContext {
 }
 
 export interface MovementNarrationContext {
+  campaignId: string;
   party: PartyContext[];
   fromLocation: LocationContext;
   toLocation: LocationContext;
@@ -341,6 +347,7 @@ export interface MovementNarrationContext {
 }
 
 export interface SkillCheckContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   characterName: string;
@@ -350,6 +357,7 @@ export interface SkillCheckContext {
 }
 
 export interface GenericActionContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   npcs: NpcContext[];
@@ -361,12 +369,14 @@ export interface GenericActionContext {
 }
 
 export interface NemesisAmbushContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   nemesis: NemesisContext;
 }
 
 export interface NemesisDefeatedContext {
+  campaignId: string;
   party: PartyContext[];
   location: LocationContext;
   nemesis: NemesisContext;

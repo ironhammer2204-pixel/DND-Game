@@ -21,6 +21,7 @@ export function AuthPage() {
     setTimeout(() => setShaking(false), 600);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getErrorMessage = (err: any): string => {
     if (err instanceof Error) return err.message;
     if (typeof err === "string") return err;

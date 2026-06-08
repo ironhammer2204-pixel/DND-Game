@@ -83,6 +83,7 @@ async function processSkillCheckAction(
   if (dmService.isEnabled() && logRes.rows[0].id) {
     const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
     dmService.enqueueSkillCheck(pool, logRes.rows[0].id, participant.campaignId, {
+      campaignId: participant.campaignId,
       party: snapshot.party,
       location: snapshot.location ?? { name: "unknown", description: "" },
       characterName: characterName,
@@ -185,6 +186,7 @@ async function processMovementAction(
     const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
     const previousLocation = await getLocationContext(client, currentLocation.id);
     dmService.enqueueMovement(pool, logRes.rows[0].id, participant.campaignId, {
+      campaignId: participant.campaignId,
       party: snapshot.party,
       fromLocation: previousLocation ?? { name: "unknown", description: "" },
       toLocation: snapshot.location ?? { name: "unknown", description: "" },
@@ -309,6 +311,7 @@ export async function processPlayerAction(
     if (dmService.isEnabled() && logRes.rows[0].id) {
       const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
       dmService.enqueueAction(pool, logRes.rows[0].id, participant.campaignId, {
+        campaignId: participant.campaignId,
         party: snapshot.party,
         location: snapshot.location ?? { name: "unknown", description: "" },
         npcs: snapshot.npcs,

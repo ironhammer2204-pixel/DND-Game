@@ -83,11 +83,27 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /\bquest\s+(?:is\s+)?(?:complete[d]?|fail(?:ed)?|finished?)\b/gi,
   // Direct HP values
   /\b\d+\s*\/\s*\d+\s*(?:HP|hit\s*points?)\b/gi,
-  // Death declarations (server decides)
-  /\b(?:you\s+)?(?:are|is|has\s+been)\s+(?:dead|killed|slain)\b/gi,
+  // Death declarations (server decides) - narrowed to player/agent death declarations only
+  /\b(?:you|your character|the party)\s+(?:are|is|has been)\s+(?:dead|killed|slain)\b/gi,
   // Revival declarations
   /\b(?:you\s+)?(?:are|is|has\s+been)\s+(?:revived?|resurrected?|brought\s+back)\b/gi,
 ];
+
+function validateNarration(filtered: string): string {
+  // Check for empty or near-empty output
+  if (filtered.length < 10) return "The event unfolds in silence.";
+
+  // Check for broken grammar (double spaces, missing verbs)
+  filtered = filtered.replace(/  +/g, " ");
+  filtered = filtered.replace(/ ([.,;])/g, "$1");
+
+  // Check for orphaned words
+  const words = filtered.split(" ");
+  if (words.some(w => w.length === 1 && !/[aAI]/.test(w))) {
+    return filtered; // or fallback
+  }
+  return filtered;
+}
 
 export function filterNarration(raw: string): string {
   let filtered = raw.trim();
@@ -96,7 +112,7 @@ export function filterNarration(raw: string): string {
   }
   // Collapse accidental double-spaces from replacements
   filtered = filtered.replace(/  +/g, " ").replace(/ \./g, ".").trim();
-  return filtered;
+  return validateNarration(filtered);
 }
 
 // ---------------------------------------------------------------------------
@@ -168,16 +184,22 @@ let queueRunning = false;
 async function drainQueue(): Promise<void> {
   if (queueRunning) return;
   queueRunning = true;
-  while (queue.length > 0) {
-    const job = queue.shift()!;
-    try {
-      await job();
-    } catch (err) {
-      // Narration failure must not crash anything
-      console.error("[dmService] narration job failed:", err);
+  try {
+    while (queue.length > 0) {
+      const job = queue.shift()!;
+      try {
+        await job();
+      } catch (err) {
+        // Narration failure must not crash anything
+        console.error("[dmService] narration job failed:", err);
+      }
+    }
+  } finally {
+    queueRunning = false;
+    if (queue.length > 0) {
+      void drainQueue();
     }
   }
-  queueRunning = false;
 }
 
 function enqueueJob(job: NarrationJob): void {

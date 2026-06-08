@@ -83,6 +83,7 @@ export async function tickNpcAgendas(
         const snapshot = await buildCampaignSnapshot(client, campaignId);
         // Using generic action enqueuer
         dmService.enqueueAction(client as Pool, logRes.rows[0].id, campaignId, {
+          campaignId,
           party: snapshot.party,
           location: snapshot.location ?? { name: "unknown", description: "" },
           npcs: snapshot.npcs,
@@ -180,6 +181,7 @@ export async function checkSecretRevealConditions(
     if (dmService.isEnabled() && logRes.rows[0].id) {
       const snapshot = await buildCampaignSnapshot(client, campaignId);
       dmService.enqueueAction(client as Pool, logRes.rows[0].id, campaignId, {
+        campaignId,
         party: snapshot.party,
         location: snapshot.location ?? { name: "unknown", description: "" },
         npcs: snapshot.npcs,

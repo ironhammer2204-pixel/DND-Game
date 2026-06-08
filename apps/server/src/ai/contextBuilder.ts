@@ -38,7 +38,7 @@ export async function getPartyContext(
     hp_current: number;
     hp_max: number;
   }>(
-    `SELECT c.name, c.race, c.class_name, c.hp_current, c.hp_max
+    `SELECT c.name, c.race, c.class AS class_name, c.hp_current, c.hp_max
      FROM characters c
      JOIN campaign_members cm ON cm.character_id = c.id
      WHERE cm.campaign_id = $1 AND cm.status = 'active'
@@ -221,9 +221,9 @@ export async function getActiveNemesisContext(
     name: string;
     tier: string;
     personality_preset: string;
-    epithets: string[] | null;
+    epithet: string | null;
   }>(
-    `SELECT name, tier, personality_preset, epithets
+    `SELECT name, tier, personality_preset, epithet
      FROM nemeses
      WHERE campaign_id = $1
        AND status = 'active'
@@ -236,7 +236,7 @@ export async function getActiveNemesisContext(
     name: rows[0].name,
     tier: rows[0].tier,
     personality_preset: rows[0].personality_preset,
-    epithets: rows[0].epithets ?? [],
+    epithet: rows[0].epithet ?? undefined,
   };
 }
 
