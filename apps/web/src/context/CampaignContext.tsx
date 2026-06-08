@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "../stores/authStore";
 import { useGameStore, type LobbyCampaign, type GameOrSystemEvent, type WsStatus } from "../stores/gameStore";
 import { API_URL, WS_URL } from "../config";
@@ -65,6 +66,7 @@ interface CampaignContextValue {
   inventoryError: string;
 
   // Core API Fetch (with Authorization)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   apiFetch: (endpoint: string, options?: RequestInit) => Promise<any>;
 
   // Callbacks & Actions
@@ -130,7 +132,7 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [questsError, setQuestsError] = useState("");
   const [inventoryError, setInventoryError] = useState("");
 
-  const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
+  const apiFetch = useCallback(async (endpoint: string, options: RequestInit = {}) => {
     const res = await fetch(`${API_URL}${endpoint}`, {
       ...options,
       headers: {
@@ -142,7 +144,7 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Request failed ${res.status}`);
     return data;
-  };
+  }, [token]);
 
   const fetchPartyCharacters = async (campaignId: string) => {
     try {
@@ -285,6 +287,7 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     };
     void loadNpcs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCampaign?.id, currentLocationId, locations]);
 
   // Dice roll visual handling
@@ -362,6 +365,7 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setWs(null);
       setWsStatus("disconnected");
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCampaign?.id, token]);
 
   // WS/API Actions

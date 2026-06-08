@@ -73,7 +73,7 @@ const RELIABILITY_COLOR = (r: number) => {
   return "#f87171";
 };
 
-export function EncyclopediaPanel({ campaignId, token, isDM, characterId: _characterId }: EncyclopediaPanelProps) {
+export function EncyclopediaPanel({ campaignId, token, isDM }: EncyclopediaPanelProps) {
   const [tab, setTab] = useState<PanelTab>("entries");
   const [entries, setEntries] = useState<EncyclopediaEntry[]>([]);
   const [rumors, setRumors] = useState<Rumor[]>([]);
