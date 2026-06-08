@@ -2,8 +2,6 @@ import { Router, Response } from "express";
 import { PoolClient } from "pg";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { pool } from "../db/client";
-import { RoomManager } from "../websocket/roomManager";
-import { handleFactionQuestCompletion } from "../game/factionEngine";
 
 const router = Router();
 
@@ -95,65 +93,14 @@ async function seedStartingWorld(client: PoolClient, campaignId: string) {
     `INSERT INTO public.npcs (campaign_id, name, role, location_id, is_alive, relationship_map, base_stats)
      VALUES
      ($1, $2, $3, $4, true, $5, $6),
-     ($7, $8, $9, $10, true, $11, $12),
-     ($13, $14, $15, $16, true, $17, $18)`,
+     ($1, $7, $8, $9, true, $10, $11),
+     ($1, $12, $13, $14, true, $15, $16)`,
     [
       campaignId, 'Eldric Ironhammer', 'Blacksmith', townId, '{}', JSON.stringify({ str: 18, cha: 12 }),
       campaignId, 'Mira Shadowstep', 'Scout', wildernessId, '{}', JSON.stringify({ dex: 16, int: 14 }),
       campaignId, 'Brother Thorne', 'Cleric', townId, '{}', JSON.stringify({ wis: 16, con: 14 })
     ]
   );
-}
-
-async function seedStarterQuests(client: PoolClient, campaignId: string) {
-  const starterQuests = [
-    {
-      type: "main",
-      title: "The Ashen Gate Stirs",
-      description: "Old stones beyond the Briarwood have begun breathing cold air again. Find the Ashen Gate and learn what woke beneath it.",
-      objectives: [
-        { text: "Speak with villagers about the Ashen Gate", completed: false },
-        { text: "Travel through Briarwood Wilds", completed: false },
-        { text: "Reach the Ashen Gate Ruins", completed: false },
-      ],
-      rewards: { gold: 25, reputation: { Emberfall: 1 } },
-    },
-    {
-      type: "side",
-      title: "Missing on the Briar Road",
-      description: "A supply runner failed to return from the forest road. The village needs someone brave enough to follow the trail.",
-      objectives: [
-        { text: "Search Briarwood Wilds for signs of the runner", completed: false },
-        { text: "Recover the runner's satchel or bring them home", completed: false },
-      ],
-      rewards: { gold: 10 },
-    },
-    {
-      type: "side",
-      title: "Lanterns for Emberfall",
-      description: "The watchtower lanterns are nearly spent. Gather supplies so the village can keep the night roads visible.",
-      objectives: [
-        { text: "Collect useful travel supplies", completed: false },
-        { text: "Return to Emberfall Village", completed: false },
-      ],
-      rewards: { item: "Potion of Healing" },
-    },
-  ];
-
-  for (const quest of starterQuests) {
-    await client.query(
-      `INSERT INTO public.quests (campaign_id, type, title, description, objectives, rewards)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        campaignId,
-        quest.type,
-        quest.title,
-        quest.description,
-        JSON.stringify(quest.objectives),
-        JSON.stringify(quest.rewards),
-      ]
-    );
-  }
 }
 
 // POST /api/campaigns - Create a new campaign
@@ -192,7 +139,6 @@ router.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response
     const campaign = campaignRes.rows[0];
 
     await seedStartingWorld(client, campaign.id);
-    await seedStarterQuests(client, campaign.id);
 
     // 2. Add owner as the DM in campaign_members
     await client.query(
@@ -304,193 +250,6 @@ router.get("/", authMiddleware, async (req: AuthenticatedRequest, res: Response)
   } catch (error) {
     console.error("List campaigns error:", error);
     res.status(500).json({ error: "Internal server error fetching campaigns" });
-  }
-});
-
-// GET /api/campaigns/:id/quests - List active and completed campaign quests
-router.get("/:id/quests", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const campaignId = req.params.id;
-  const userId = req.user?.sub;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  try {
-    const membership = await getMembership(campaignId, userId);
-    if (!membership) {
-      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
-    }
-
-    const questsRes = await pool.query(
-      `SELECT *
-       FROM public.quests
-       WHERE campaign_id = $1
-       ORDER BY
-         CASE status WHEN 'active' THEN 0 WHEN 'complete' THEN 1 ELSE 2 END,
-         created_at ASC`,
-      [campaignId]
-    );
-
-    res.json({ quests: questsRes.rows });
-  } catch (error) {
-    console.error("List campaign quests error:", error);
-    res.status(500).json({ error: "Internal server error fetching quests" });
-  }
-});
-
-// GET /api/campaigns/:id/quests/:questId - Fetch one campaign quest
-router.get("/:id/quests/:questId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const campaignId = req.params.id;
-  const questId = req.params.questId;
-  const userId = req.user?.sub;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  try {
-    const membership = await getMembership(campaignId, userId);
-    if (!membership) {
-      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
-    }
-
-    const questRes = await pool.query("SELECT * FROM public.quests WHERE id = $1 AND campaign_id = $2", [
-      questId,
-      campaignId,
-    ]);
-
-    if (questRes.rows.length === 0) {
-      return res.status(404).json({ error: "Quest not found" });
-    }
-
-    res.json({ quest: questRes.rows[0] });
-  } catch (error) {
-    console.error("Get campaign quest error:", error);
-    res.status(500).json({ error: "Internal server error fetching quest" });
-  }
-});
-
-// POST /api/campaigns/:id/quests - DM creates a campaign quest
-router.post("/:id/quests", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const campaignId = req.params.id;
-  const userId = req.user?.sub;
-  const { type = "side", title, description = "", objectives = [], rewards = {} } = req.body;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  if (!title || !Array.isArray(objectives) || objectives.length === 0) {
-    return res.status(400).json({ error: "Missing quest title or objectives" });
-  }
-
-  if (!["main", "side", "random"].includes(type)) {
-    return res.status(400).json({ error: "Invalid quest type" });
-  }
-
-  try {
-    const membership = await getMembership(campaignId, userId);
-    if (!membership || membership.role !== "dm") {
-      return res.status(403).json({ error: "Forbidden: Only the DM can create quests" });
-    }
-
-    const safeObjectives = objectives.map((objective: { text?: string; completed?: boolean } | string) =>
-      typeof objective === "string"
-        ? { text: objective, completed: false }
-        : { text: objective.text || "Untitled objective", completed: Boolean(objective.completed) }
-    );
-
-    const questRes = await pool.query(
-      `INSERT INTO public.quests (campaign_id, type, title, description, objectives, rewards)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [campaignId, type, title, description, JSON.stringify(safeObjectives), JSON.stringify(rewards)]
-    );
-    const quest = questRes.rows[0];
-
-    RoomManager.broadcastToRoom(campaignId, "QUEST_UPDATE", { quest });
-
-    res.status(201).json({ quest });
-  } catch (error) {
-    console.error("Create campaign quest error:", error);
-    res.status(500).json({ error: "Internal server error creating quest" });
-  }
-});
-
-// PATCH /api/campaigns/:id/quests/:questId/objective - DM toggles an objective
-router.patch("/:id/quests/:questId/objective", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const campaignId = req.params.id;
-  const questId = req.params.questId;
-  const userId = req.user?.sub;
-  const { objective_index, completed = true } = req.body;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  if (!Number.isInteger(objective_index) || objective_index < 0) {
-    return res.status(400).json({ error: "objective_index must be a non-negative integer" });
-  }
-
-  const client = await pool.connect();
-  try {
-    const membership = await getMembership(campaignId, userId);
-    if (!membership || membership.role !== "dm") {
-      return res.status(403).json({ error: "Forbidden: Only the DM can update quest objectives" });
-    }
-
-    await client.query("BEGIN");
-
-    const questRes = await client.query(
-      "SELECT * FROM public.quests WHERE id = $1 AND campaign_id = $2 FOR UPDATE",
-      [questId, campaignId]
-    );
-
-    if (questRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Quest not found" });
-    }
-
-    const quest = questRes.rows[0];
-    const objectives = Array.isArray(quest.objectives) ? [...quest.objectives] : [];
-    if (!objectives[objective_index]) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Objective not found" });
-    }
-
-    objectives[objective_index] = {
-      ...objectives[objective_index],
-      completed: Boolean(completed),
-    };
-    const nextStatus = objectives.every((objective) => objective.completed) ? "complete" : "active";
-
-    const updatedRes = await client.query(
-      `UPDATE public.quests
-       SET objectives = $1,
-           status = $2,
-           completed_at = CASE WHEN $2 = 'complete' THEN now() ELSE NULL END
-       WHERE id = $3 AND campaign_id = $4
-       RETURNING *`,
-      [JSON.stringify(objectives), nextStatus, questId, campaignId]
-    );
-
-    if (nextStatus === "complete") {
-      await handleFactionQuestCompletion(client, campaignId, updatedRes.rows[0]);
-    }
-
-    await client.query("COMMIT");
-    const updatedQuest = updatedRes.rows[0];
-
-    RoomManager.broadcastToRoom(campaignId, "QUEST_UPDATE", { quest: updatedQuest });
-
-    res.json({ quest: updatedQuest });
-  } catch (error) {
-    await client.query("ROLLBACK");
-    console.error("Update quest objective error:", error);
-    res.status(500).json({ error: "Internal server error updating quest objective" });
-  } finally {
-    client.release();
   }
 });
 
@@ -616,41 +375,14 @@ router.get("/:id/locations/:locationId/npcs", authMiddleware, async (req: Authen
     }
 
     const npcsRes = await pool.query(
-      `SELECT id, campaign_id, name, role, location_id, is_alive, relationship_map, base_stats, agenda_state
+      `SELECT id, campaign_id, name, role, location_id, is_alive, relationship_map, base_stats
        FROM public.npcs
        WHERE campaign_id = $1 AND location_id = $2 AND is_alive = true
        ORDER BY name ASC`,
       [campaignId, locationId]
     );
 
-    const mappedNpcs = npcsRes.rows.map((row) => {
-      const map = row.relationship_map || {};
-      const values = Object.values(map) as number[];
-      const avgTrust = values.length > 0
-        ? values.reduce((sum, val) => sum + val, 0) / values.length
-        : 0;
-
-      let perception = "neutral";
-      const state = row.agenda_state || {};
-      if (state.blocked_reason) {
-        perception = "evasive, changes subject when pressed";
-      } else if (state.ticks_at_current_step > 3) {
-        perception = "appears frustrated, distracted";
-      } else if (state.last_action === "seek_ally") {
-        perception = "seems to be looking for someone";
-      } else if (state.last_action === "spread_rumour") {
-        perception = "unusually talkative, asking odd questions";
-      }
-
-      return {
-        ...row,
-        agenda_state: undefined, // remove from payload
-        relationship_score: avgTrust,
-        party_perception: perception,
-      };
-    });
-
-    res.json({ npcs: mappedNpcs });
+    res.json({ npcs: npcsRes.rows });
   } catch (error) {
     console.error("Get location NPCs error:", error);
     res.status(500).json({ error: "Internal server error fetching NPCs" });

@@ -1,9 +1,5 @@
 import { Pool, PoolClient } from "pg";
-import { pool } from "../db/client";
 import { ServerMessageMap } from "@dnd/shared";
-import { runWorldHeartbeat, recordBehaviourEvent } from "./worldEngine.js";
-import { dmService } from "../ai/dmService.js";
-import { buildCampaignSnapshot, getLocationContext } from "../ai/contextBuilder";
 
 type ActionType = "exploration" | "skill_check" | "npc_interaction" | "other";
 
@@ -69,29 +65,6 @@ async function processSkillCheckAction(
     "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'skill_check', $2, $3) RETURNING id, created_at",
     [participant.campaignId, participant.characterId, JSON.stringify(payload)]
   );
-
-  let checkTags: string[] = [];
-  if (["stealth", "deception", "sleightOfHand"].includes(chosenSkill)) {
-    checkTags.push("shadow");
-  } else if (["investigation", "arcana", "nature", "history", "religion"].includes(chosenSkill)) {
-    checkTags.push("curiosity");
-  }
-  if (checkTags.length > 0 && participant.characterId) {
-    await recordBehaviourEvent(client, participant.campaignId, participant.characterId, "skill_check", checkTags, 1);
-  }
-
-  if (dmService.isEnabled() && logRes.rows[0].id) {
-    const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
-    dmService.enqueueSkillCheck(pool, logRes.rows[0].id, participant.campaignId, {
-      campaignId: participant.campaignId,
-      party: snapshot.party,
-      location: snapshot.location ?? { name: "unknown", description: "" },
-      characterName: characterName,
-      skill: chosenSkill,
-      success: finalValue >= 10,
-      context: actionText,
-    });
-  }
 
   return {
     event: {
@@ -182,19 +155,6 @@ async function processMovementAction(
     [participant.campaignId, participant.characterId, JSON.stringify(payload)]
   );
 
-  if (dmService.isEnabled() && logRes.rows[0].id) {
-    const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
-    const previousLocation = await getLocationContext(client, currentLocation.id);
-    dmService.enqueueMovement(pool, logRes.rows[0].id, participant.campaignId, {
-      campaignId: participant.campaignId,
-      party: snapshot.party,
-      fromLocation: previousLocation ?? { name: "unknown", description: "" },
-      toLocation: snapshot.location ?? { name: "unknown", description: "" },
-      npcs: snapshot.npcs,
-      recentEvents: snapshot.recentEvents,
-    });
-  }
-
   return {
     event: {
       id: logRes.rows[0].id,
@@ -259,7 +219,6 @@ export async function processPlayerAction(
     try {
       await client.query("BEGIN");
       const result = await processMovementAction(client, participant, characterName, input.target_location_id);
-      await runWorldHeartbeat(client, participant.campaignId, false);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -270,14 +229,11 @@ export async function processPlayerAction(
     }
   }
 
-  const isRestAction = text ? text.toLowerCase().includes("rest") : false;
-
   if (actionType === "skill_check") {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const result = await processSkillCheckAction(client, participant, characterName, text);
-      await runWorldHeartbeat(client, participant.campaignId, isRestAction);
       await client.query("COMMIT");
       return result;
     } catch (error) {
@@ -294,48 +250,18 @@ export async function processPlayerAction(
     actor_name: characterName,
   };
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const logRes = await client.query(
-      "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'exploration', $2, $3) RETURNING id, created_at",
-      [participant.campaignId, participant.characterId, JSON.stringify(payload)]
-    );
-    await runWorldHeartbeat(client, participant.campaignId, isRestAction);
-    await client.query("COMMIT");
+  const logRes = await pool.query(
+    "INSERT INTO public.event_log (campaign_id, type, actor_id, payload) VALUES ($1, 'exploration', $2, $3) RETURNING id, created_at",
+    [participant.campaignId, participant.characterId, JSON.stringify(payload)]
+  );
 
-    if (text && participant.characterId) {
-      dmService.enqueueIntentClassification(pool, participant.characterId, participant.campaignId, text);
-    }
-
-    if (dmService.isEnabled() && logRes.rows[0].id) {
-      const snapshot = await buildCampaignSnapshot(client, participant.campaignId);
-      dmService.enqueueAction(pool, logRes.rows[0].id, participant.campaignId, {
-        campaignId: participant.campaignId,
-        party: snapshot.party,
-        location: snapshot.location ?? { name: "unknown", description: "" },
-        npcs: snapshot.npcs,
-        quests: snapshot.quests,
-        recentEvents: snapshot.recentEvents,
-        actorName: characterName,
-        actionDescription: text ?? "took an action",
-        serverResult: "resolved by server",
-      });
-    }
-
-    return {
-      event: {
-        id: logRes.rows[0].id,
-        type: "exploration",
-        actor_name: payload.actor_name,
-        payload,
-        timestamp: logRes.rows[0].created_at,
-      },
-    };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  return {
+    event: {
+      id: logRes.rows[0].id,
+      type: "exploration",
+      actor_name: payload.actor_name,
+      payload,
+      timestamp: logRes.rows[0].created_at,
+    },
+  };
 }
