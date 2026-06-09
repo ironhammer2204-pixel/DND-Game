@@ -1,6 +1,6 @@
 import React, { useState } from "react"
 import { useCampaign } from "@/context/CampaignContext"
-import { RACES, CLASSES } from "@dnd/shared"
+import { RACES, CLASSES, type Character } from "@dnd/shared"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -68,11 +68,11 @@ export const CharacterSheetPage: React.FC = () => {
   const [tempAttributes, setTempAttributes] = useState<Record<string, number>>({})
   const [allocationError, setAllocationError] = useState("")
 
-  const getAvailableStatPoints = (char: any) => {
+  const getAvailableStatPoints = (char: Character) => {
     const defaults = CLASS_STARTING_STATS[char.class]
     if (!defaults) return 0
     const startingSum = Object.values(defaults.attributes).reduce((s, v) => s + v, 0)
-    const currentSum = Object.values(char.attributes).reduce((s: number, v: any) => s + Number(v), 0)
+    const currentSum = Object.values(char.attributes).reduce((s, v) => s + Number(v), 0)
     const allowed = startingSum + 2 * (char.level - 1)
     return Math.max(0, allowed - currentSum)
   }

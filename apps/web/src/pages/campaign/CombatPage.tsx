@@ -243,7 +243,7 @@ export const CombatPage: React.FC = () => {
                           <ConditionChip
                             key={cond}
                             participantId={p.id}
-                            condition={cond as any}
+                            condition={cond as "poisoned" | "stunned" | "paralysed" | "dodging"}
                             isActive={true}
                             interactive={activeRole === "dm"}
                           />

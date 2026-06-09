@@ -33,6 +33,7 @@ app.use(
       const isAllowed =
         origin.startsWith("http://localhost:") ||
         origin.endsWith(".vercel.app") ||
+        origin.endsWith(".onrender.com") ||
         /trycloudflare\.com|run\.pinggy-free\.link|ngrok/i.test(origin);
 
       if (isAllowed) {
