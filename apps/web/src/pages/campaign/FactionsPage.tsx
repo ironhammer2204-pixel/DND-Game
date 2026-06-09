@@ -6,7 +6,7 @@ export const FactionsPage: React.FC = () => {
   const navigate = useNavigate()
 
   const handleClose = () => {
-    navigate("/campaign/dashboard")
+    navigate("/dashboard")
   }
 
   return (

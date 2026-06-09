@@ -1,3 +1,4 @@
+import './App.css';
 import { useAuthStore } from "./stores/authStore";
 import { useGameStore } from "./stores/gameStore";
 import { AuthPage } from "./pages/AuthPage";

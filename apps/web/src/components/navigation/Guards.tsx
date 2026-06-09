@@ -10,7 +10,7 @@ export const DmOnlyRoute: React.FC<GuardProps> = ({ children }) => {
   const { activeRole } = useCampaign()
 
   if (activeRole !== "dm") {
-    return <Navigate to="/campaign/dashboard" replace />
+    return <Navigate to="/dashboard" replace />
   }
 
   return children ? <>{children}</> : <Outlet />
@@ -21,7 +21,7 @@ export const CombatActiveRoute: React.FC<GuardProps> = ({ children }) => {
 
   // If combat is active, force navigation to combat viewport
   if (activeCombat) {
-    return <Navigate to="/campaign/combat" replace />
+    return <Navigate to="/combat" replace />
   }
 
   return children ? <>{children}</> : <Outlet />

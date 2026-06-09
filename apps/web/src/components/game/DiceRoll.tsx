@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export const DiceRoll: React.FC = () => {
-  const { activeRoll } = useCampaign()
-  const { dismissActiveRoll } = useCampaign()
+  const { activeRoll, dismissActiveRoll } = useCampaign()
 
   if (!activeRoll) return null
 
