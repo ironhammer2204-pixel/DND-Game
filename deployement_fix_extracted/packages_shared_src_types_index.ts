@@ -104,7 +104,6 @@ export interface NPC {
   known_info: string[];
   memory_log: NPCInteraction[];
   base_stats: Record<string, any>;
-  relationship_score?: number;
 }
 
 export interface QuestObjective {
@@ -152,16 +151,6 @@ export interface CombatParticipant {
   damage_dice: string;
   damage_modifier: number;
   xp_value?: number;
-  source_monster_id?: string;
-  damage_taken?: number;
-  damage_dealt?: number;
-  downed_character_ids?: string[];
-  nemesis_id?: string;
-  nemesis_tier?: NemesisTier;
-  personality?: NemesisPersonality;
-  grudge_target_id?: string;
-  scars?: any[];
-  minion_ids?: string[];
 }
 
 export interface CombatEncounter {
@@ -212,48 +201,33 @@ export interface Nemesis {
   id: string;
   campaign_id: string;
   name: string;
-  epithet?: string | null;
+  title: string;
   tier: NemesisTier;
-  status: NemesisStatus;
-  level: number;
-  xp: number;
   personality: NemesisPersonality;
-  traits: Record<string, any>;
-  tactics: Record<string, any>;
-  stats: Record<string, any>;
-  scars: any[];
-  appearance: Record<string, any>;
-  faction_id?: string | null;
-  minion_ids: string[];
-  location_id?: string | null;
-  target_character_id?: string | null;
-  grudge_score: number;
-  bounty_on_party: number;
-  successor_nemesis_id?: string | null;
-  promoted_from_nemesis_id?: string | null;
-  source_monster_id?: string | null;
+  hp_current: number;
+  hp_max: number;
+  ac: number;
+  attack_bonus: number;
+  damage_dice: string;
+  damage_modifier: number;
+  xp_value: number;
+  conditions: string[];
+  is_alive: boolean;
   created_at: string;
   updated_at: string;
-  last_seen_at?: string | null;
-  faction_name?: string | null;
-  location_name?: string | null;
-  target_character_name?: string | null;
 }
 
-export type NemesisTier = "soldier" | "lieutenant" | "warlord" | "archnemesis";
-export type NemesisStatus = "active" | "dead" | "retired" | "missing" | "ambushing";
-export type NemesisPersonality = "brutal" | "cowardly" | "cunning" | "honorable" | "vengeful" | "warlord" | "paranoid";
+export type NemesisTier = "minion" | "lieutenant" | "boss" | "nemesis" | "legend";
+export type NemesisStatus = "active" | "defeated" | "retired";
+export type NemesisPersonality = "vengeful" | "calculating" | "sadistic" | "honorable" | "unpredictable";
 
 export interface NemesisHistoryEntry {
   id: string;
   nemesis_id: string;
-  campaign_id: string;
-  encounter_id?: string | null;
   event_type: string;
-  actor_character_id?: string | null;
-  summary: string;
-  mechanical_data: Record<string, any>;
-  occurred_at: string;
+  description: string;
+  importance: number;
+  created_at: string;
 }
 
 // Faction System
@@ -262,142 +236,97 @@ export interface Faction {
   id: string;
   campaign_id: string;
   name: string;
-  disposition: "hostile" | "neutral" | "rival" | "allied";
-  power_level: number;
-  description?: string | null;
-  type: "empire" | "merchant" | "cult" | "rebel" | "criminal" | "secret" | "neutral";
-  is_hidden: boolean;
-  military: number;
+  type: FactionType;
+  personality: FactionPersonality;
+  power: number;
   wealth: number;
   influence: number;
-  stability: number;
-  pressure: number;
-  pressure_cap: number;
-  territories: number;
-  personality: "expansionist" | "merchant" | "religious" | "revolutionary" | "defensive" | "isolationist";
-  objectives: any[];
-  victory_condition: Record<string, any>;
-  is_victorious: boolean;
-  collapsed: boolean;
+  territory_control: number;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
 }
 
-export type FactionType = "empire" | "merchant" | "cult" | "rebel" | "criminal" | "secret" | "neutral";
-export type FactionPersonality = "expansionist" | "merchant" | "religious" | "revolutionary" | "defensive" | "isolationist";
-export type FactionActionType = string;
-export type TreatyType = "none" | "truce" | "trade" | "alliance" | "vassalage";
+export type FactionType = "guild" | "cult" | "kingdom" | "tribe" | "syndicate" | "order";
+export type FactionPersonality = "aggressive" | "diplomatic" | "isolationist" | "mercantile" | "expansionist";
+export type FactionActionType = "attack" | "defend" | "expand" | "trade" | "sabotage" | "recruit" | "negotiate";
+export type TreatyType = "alliance" | "trade" | "non_aggression" | "vassalage";
 
 export interface FactionAction {
   id: string;
   campaign_id: string;
   faction_id: string;
-  action_type: string;
-  target_type: "location" | "npc" | "faction" | "trade_route" | "player";
-  target_id: string;
+  action_type: FactionActionType;
+  target_type?: string;
+  target_id?: string;
   pressure_cost: number;
-  status: "pending" | "resolved" | "vetoed" | "countered";
-  result: Record<string, any>;
-  cooldown_until?: string | null;
-  triggered_by: "engine" | "dm" | "player_action" | "cascade";
-  parent_action_id?: string | null;
+  status: "pending" | "resolved" | "vetoed";
+  cooldown_until?: string;
+  triggered_by: string;
   created_at: string;
-  resolved_at?: string | null;
 }
 
 export interface FactionRelation {
   id: string;
-  campaign_id: string;
   faction_a_id: string;
   faction_b_id: string;
-  score: number;
-  treaty_type: TreatyType;
-  treaty_expires_at?: string | null;
+  relation_score: number;
+  treaty_type?: TreatyType;
+  is_at_war: boolean;
+  created_at: string;
   updated_at: string;
 }
 
 export interface FactionTerritory {
   id: string;
-  campaign_id: string;
-  location_id: string;
   faction_id: string;
-  pressure_value: number;
-  control_percent: number;
-  is_claimed: boolean;
-  updated_at: string;
+  location_id: string;
+  control_level: number;
+  contested: boolean;
+  created_at: string;
 }
 
 export interface PlayerFactionReputation {
   id: string;
-  campaign_id: string;
   character_id: string;
   faction_id: string;
-  score: number;
-  tier: "unknown" | "watched" | "wanted" | "hunted" | "champion" | "legend";
-  bounty_amount: number;
+  reputation_score: number;
+  tier: ReputationTier;
+  created_at: string;
   updated_at: string;
 }
 
-export type ReputationTier = "unknown" | "watched" | "wanted" | "hunted" | "champion" | "legend";
+export type ReputationTier = "hated" | "hostile" | "unfriendly" | "neutral" | "friendly" | "honored" | "revered";
 
 // Encyclopedia System
 
-export type EncyclopediaCategory =
-  | "location"
-  | "npc"
-  | "faction"
-  | "creature"
-  | "item"
-  | "religion"
-  | "language"
-  | "technology"
-  | "event"
-  | "era"
-  | "artifact"
-  | "player";
+export type EncyclopediaCategory = "npc" | "location" | "faction" | "item" | "event" | "creature" | "era";
 
 export interface EncyclopediaEntry {
   id: string;
   campaign_id: string;
   category: EncyclopediaCategory;
-  source_id?: string | null;
-  source_type?: string | null;
-  title: string;
-  subtitle?: string | null;
-  summary?: string | null;
-  full_content: Record<string, any>;
+  name: string;
+  description: string;
+  knowledge_level: KnowledgeLevel;
   importance: number;
-  tags: string[];
-  is_secret: boolean;
-  dm_notes?: string | null;
-  custom_lore?: string | null;
-  pinned: boolean;
-  era_id?: string | null;
+  discovered_by: string[];
+  related_entry_ids: string[];
+  metadata: Record<string, any>;
   created_at: string;
   updated_at: string;
 }
 
 export type KnowledgeLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
-export type KnowledgeDiscoverySource =
-  | "exploration"
-  | "combat"
-  | "quest"
-  | "npc_dialogue"
-  | "item"
-  | "faction_event"
-  | "dm_grant"
-  | "rumor";
+export type KnowledgeDiscoverySource = "exploration" | "combat" | "dialogue" | "research" | "rumor" | "dm_grant";
 
 export interface CharacterKnowledge {
   id: string;
-  campaign_id: string;
   character_id: string;
   entry_id: string;
   knowledge_level: KnowledgeLevel;
+  source: KnowledgeDiscoverySource;
   discovered_at: string;
-  discovery_source: KnowledgeDiscoverySource;
-  updated_at: string;
 }
 
 export interface EncyclopediaHistoryEvent {
@@ -406,12 +335,12 @@ export interface EncyclopediaHistoryEvent {
   entry_id: string;
   event_type: string;
   title: string;
-  description?: string | null;
-  year?: number | null;
+  description: string;
+  year: number;
   importance: number;
   involved_entry_ids: string[];
-  source_type: "combat" | "faction" | "quest" | "dm" | "system";
-  source_id?: string | null;
+  source_type: string;
+  source_id?: string;
   created_at: string;
 }
 
@@ -419,25 +348,20 @@ export interface HistoricalEra {
   id: string;
   campaign_id: string;
   name: string;
-  start_year?: number | null;
-  end_year?: number | null;
-  description?: string | null;
-  trigger_event_id?: string | null;
+  description: string;
+  start_year: number;
+  end_year?: number;
+  trigger_events: string[];
   created_at: string;
 }
 
 export interface Rumor {
   id: string;
   campaign_id: string;
-  entry_id: string;
-  content: string;
-  reliability: number;
-  is_true: boolean | null;
-  source_type: "npc" | "faction" | "player" | "dm" | "system";
-  source_id?: string | null;
-  spread_count: number;
-  contradicts_rumor_id?: string | null;
-  resolved_at?: string | null;
+  text: string;
+  related_entry_ids: string[];
+  is_true: boolean;
+  status: "active" | "resolved" | "dismissed";
   created_at: string;
 }
 
@@ -446,18 +370,15 @@ export interface CharacterRumor {
   character_id: string;
   rumor_id: string;
   heard_at: string;
-  believed: boolean;
+  status: "unverified" | "confirmed" | "dismissed";
 }
 
 export interface ArtifactProvenance {
   id: string;
-  campaign_id: string;
-  item_entry_id: string;
-  owner_type: "character" | "npc" | "faction" | "location" | "unknown";
-  owner_id?: string | null;
-  acquired_via: "found" | "purchased" | "stolen" | "gifted" | "crafted" | "quest" | "looted";
-  year?: number | null;
-  notes?: string | null;
+  artifact_entry_id: string;
+  current_owner_id?: string;
+  location_id?: string;
+  ownership_history: Array<{ owner_id: string; acquired_at: string }>;
   created_at: string;
 }
 
@@ -465,14 +386,8 @@ export interface SessionRecord {
   id: string;
   campaign_id: string;
   session_number: number;
-  started_at?: string | null;
-  ended_at?: string | null;
-  player_character_ids: string[];
-  event_ids: string[];
-  ai_summary?: string | null;
-  dm_notes?: string | null;
-  summary_approved: boolean;
-  importance: number;
+  summary: string;
+  key_events: string[];
   created_at: string;
 }
 
@@ -481,64 +396,36 @@ export interface SessionRecord {
 export interface BalanceSnapshot {
   id: string;
   campaign_id: string;
-  snapshot_type: "economy" | "combat" | "faction" | "loot" | "progression";
-  data: Record<string, any>;
-  flags: Record<string, any>;
-  recommendations: Record<string, any>;
-  applied: boolean;
-  created_at: string;
+  timestamp: string;
+  economy: EconomyMetrics;
+  combat: CombatMetrics;
+  loot: LootMetrics;
+  progression: ProgressionMetrics;
 }
 
 export interface EconomyMetrics {
-  id: string;
-  campaign_id: string;
-  cycle_number: number;
   total_gold_in_circulation: number;
-  gold_generated_this_cycle: number;
-  gold_sunk_this_cycle: number;
-  inflation_index: number;
-  avg_player_wealth: number;
-  wealth_gini: number;
-  created_at: string;
+  average_party_gold: number;
+  inflation_rate: number;
 }
 
 export interface CombatMetrics {
-  id: string;
-  campaign_id: string;
-  cycle_number: number;
-  avg_combat_duration_rounds: number;
-  avg_player_damage_per_round: number;
-  avg_enemy_damage_per_round: number;
-  win_rate: number;
-  death_rate: number;
-  most_used_build_types: Record<string, any>;
-  dominant_build_percent: number;
-  sessions_sampled: number;
-  created_at: string;
+  encounter_count: number;
+  player_death_count: number;
+  average_encounter_duration_minutes: number;
+  difficulty_rating: number;
 }
 
 export interface LootMetrics {
-  id: string;
-  campaign_id: string;
-  cycle_number: number;
-  item_id: string;
-  drop_count: number;
-  usage_count: number;
-  sell_count: number;
-  current_drop_rate: number;
-  recommended_drop_rate: number;
-  created_at: string;
+  items_distributed: number;
+  average_item_value: number;
+  rarity_distribution: Record<string, number>;
 }
 
 export interface ProgressionMetrics {
-  id: string;
-  campaign_id: string;
-  cycle_number: number;
-  avg_character_level: number;
-  xp_per_session_avg: number;
-  level_distribution: Record<string, any>;
-  soft_cap_triggers: Record<string, any>;
-  created_at: string;
+  average_party_level: number;
+  xp_per_hour: number;
+  milestone_completion_rate: number;
 }
 
 export interface BalanceAlert {
@@ -554,10 +441,10 @@ export interface BalanceAlert {
 export interface BalanceOverride {
   id: string;
   campaign_id: string;
-  metric_type: string;
-  value: number;
-  reason?: string;
-  expires_at?: string;
+  category: string;
+  adjustment: Record<string, any>;
+  reason: string;
+  applied_at: string;
 }
 
 export interface CharacterBehaviourLog {
@@ -644,7 +531,7 @@ export interface ClientMessageMap {
   };
   FORCE_FACTION_ACTION: {
     faction_id: string;
-    action_type: string;
+    action_type: FactionActionType;
     target_type: string;
     target_id: string;
   };
@@ -654,33 +541,31 @@ export interface ClientMessageMap {
   SET_FACTION_RELATION: {
     faction_a_id: string;
     faction_b_id: string;
-    score: number;
+    relation_score: number;
     treaty_type?: TreatyType;
-    expires_in_days?: number;
+    is_at_war: boolean;
   };
   TRIGGER_FACTION_EVENT: {
     faction_id: string;
     event_type: string;
-    payload?: Record<string, any>;
+    payload: Record<string, any>;
   };
   GRANT_KNOWLEDGE: {
     character_id: string;
     entry_id: string;
-    knowledge_level?: KnowledgeLevel;
-    discovery_source?: KnowledgeDiscoverySource;
+    level: KnowledgeLevel;
+    source: KnowledgeDiscoverySource;
   };
   RESOLVE_RUMOR: {
     rumor_id: string;
-    is_true: boolean;
+    character_id: string;
+    outcome: "confirmed" | "dismissed";
   };
-  TRIGGER_SESSION_SUMMARY: {
-    session_id: string;
-  };
+  TRIGGER_SESSION_SUMMARY: Record<string, never>;
   TRIGGER_BALANCE_CYCLE: Record<string, never>;
   UPDATE_CONDITIONS: {
     participant_id: string;
-    condition: string;
-    action: "add" | "remove";
+    conditions: string[];
   };
 }
 
@@ -763,17 +648,17 @@ export interface ServerMessageMap {
   };
   NEMESIS_UPDATE: {
     nemesis: Nemesis;
-    history_entry?: NemesisHistoryEntry;
-    reason: string;
+    event_type: string;
+    description: string;
   };
   FACTION_UPDATE: {
     faction: Faction;
     action?: FactionAction;
-    event_type?: string;
+    event_type: string;
   };
   ENCYCLOPEDIA_ENTRY_UPDATED: {
     entry: EncyclopediaEntry;
-    reason: string;
+    history_event?: EncyclopediaHistoryEvent;
   };
   RUMOR_HEARD: {
     rumor: Rumor;
@@ -781,65 +666,65 @@ export interface ServerMessageMap {
   };
   RUMOR_RESOLVED: {
     rumor_id: string;
-    is_true: boolean;
-    narrative: string;
+    outcome: "confirmed" | "dismissed";
+    truth_revealed?: string;
   };
   SESSION_SUMMARY_READY: {
-    session: SessionRecord;
-    approved: boolean;
+    session_id: string;
+    summary: string;
+    key_events: string[];
   };
   FACTION_ACTION_RESOLVED: {
     action: FactionAction;
-    narrative: string;
+    result: Record<string, any>;
   };
   FACTION_TREATY_SIGNED: {
-    faction_a_id: string;
-    faction_b_id: string;
-    treaty_type: "none" | "truce" | "trade" | "alliance" | "vassalage";
-    narrative: string;
+    faction_a: Faction;
+    faction_b: Faction;
+    treaty_type: TreatyType;
   };
   FACTION_WAR_DECLARED: {
-    faction_a_id: string;
-    faction_b_id: string;
-    narrative: string;
+    aggressor: Faction;
+    defender: Faction;
+    casus_belli: string;
   };
   FACTION_COLLAPSED: {
-    faction_id: string;
-    narrative: string;
+    faction: Faction;
+    reason: string;
+    successor_faction_id?: string;
   };
   PLAYER_REP_CHANGED: {
     character_id: string;
     faction_id: string;
-    score: number;
-    tier: string;
-    narrative: string;
+    old_tier: ReputationTier;
+    new_tier: ReputationTier;
+    reputation_score: number;
   };
   FACTION_VICTORY: {
-    faction_id: string;
-    narrative: string;
+    faction: Faction;
+    victory_condition: string;
+    defeated_factions: string[];
   };
   NEMESIS_AMBUSH: {
     nemesis: Nemesis;
-    location_id?: string | null;
-    message: string;
+    location_id: string;
+    participants: CombatParticipant[];
   };
   ENCYCLOPEDIA_KNOWLEDGE_GRANTED: {
     character_id: string;
-    entry_id: string;
-    knowledge_level: KnowledgeLevel;
-    discovery_source: KnowledgeDiscoverySource;
+    entry: EncyclopediaEntry;
+    new_level: KnowledgeLevel;
   };
   ERA_CHANGED: {
-    era: HistoricalEra;
-    trigger_event_id?: string | null;
-    narrative: string;
+    new_era: HistoricalEra;
+    previous_era?: HistoricalEra;
+    trigger_events: EncyclopediaHistoryEvent[];
   };
   KNOWLEDGE_GAINED: {
     character_id: string;
     entry_id: string;
+    category: EncyclopediaCategory;
     knowledge_level: KnowledgeLevel;
-    discovery_source: KnowledgeDiscoverySource;
-    entry_title: string;
   };
 }
 
