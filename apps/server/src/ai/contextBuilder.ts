@@ -49,8 +49,8 @@ export async function buildCampaignMeta(
       opening_narration: worldState.opening_narration || "",
       random_event_seeds: worldState.random_event_seeds || [],
     };
-  } catch (err) {
-    console.error("[contextBuilder] buildCampaignMeta error:", err);
+  } catch (err: unknown) {
+    console.error("[contextBuilder] buildCampaignMeta error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -121,6 +121,12 @@ export async function getCampaignLocationId(
 // NPCs
 // ---------------------------------------------------------------------------
 
+interface AgendaState {
+  blocked_reason?: string;
+  ticks_at_current_step?: number;
+  last_action?: string;
+}
+
 export async function getNpcsAtLocation(
   client: Pool | PoolClient,
   locationId: string,
@@ -130,7 +136,7 @@ export async function getNpcsAtLocation(
     name: string;
     archetype: string;
     relationship_map: Record<string, number>;
-    agenda_state: any;
+    agenda_state: AgendaState | null;
   }>(
     `SELECT n.name, n.archetype, n.relationship_map, n.agenda_state
      FROM npcs n
@@ -152,7 +158,7 @@ export async function getNpcsAtLocation(
     const state = r.agenda_state || {};
     if (state.blocked_reason) {
       hint = "evasive, changes subject when pressed";
-    } else if (state.ticks_at_current_step > 3) {
+    } else if (state.ticks_at_current_step && state.ticks_at_current_step > 3) {
       hint = "appears frustrated, distracted";
     } else if (state.last_action === "seek_ally") {
       hint = "seems to be looking for someone";

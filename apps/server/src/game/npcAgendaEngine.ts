@@ -35,7 +35,7 @@ export async function tickNpcAgendas(
     const stats = npc.base_stats || {};
     const fear = stats.fear || 50;
     const ambition = stats.ambition || 50;
-    
+
     // Personality-driven stuck threshold. High ambition = low threshold (acts fast), high fear = high threshold (waits)
     // Range: roughly 1 to 5 ticks
     const stuckThreshold = Math.max(1, Math.round(3 + (fear - ambition) / 30));

@@ -28,8 +28,8 @@ interface EconomySnapshot {
   inflationIndex: number;
   avgPlayerWealth: number;
   wealthGini: number;
-  flags: Record<string, any>;
-  recommendations: Record<string, any>;
+  flags: Record<string, Record<string, unknown>>;
+  recommendations: Record<string, string>;
 }
 
 /**
@@ -71,7 +71,7 @@ export async function computeEconomyMetrics(
     "SELECT gold FROM public.characters WHERE campaign_id = $1 AND is_alive = true",
     [campaignId]
   );
-  const wealthValues: number[] = charRes.rows.map((r) => r.gold ?? 0);
+  const wealthValues: number[] = charRes.rows.map((r: { gold: number }) => r.gold ?? 0);
   const totalGold = wealthValues.reduce((s, v) => s + v, 0);
   const avgPlayerWealth = wealthValues.length > 0 ? Math.round(totalGold / wealthValues.length) : 0;
   const wealthGini = computeWealthGini(wealthValues);
@@ -92,8 +92,8 @@ export async function computeEconomyMetrics(
 
   const inflationIndex = computeInflationIndex(goldGenerated + 100, goldSunk + 100); // +100 to avoid divide by zero
 
-  const flags: Record<string, any> = {};
-  const recommendations: Record<string, any> = {};
+  const flags: Record<string, Record<string, unknown>> = {};
+  const recommendations: Record<string, string> = {};
 
   if (inflationIndex > 1.3) {
     flags.inflation = { severity: "critical", value: inflationIndex };
@@ -156,8 +156,8 @@ interface CombatSnapshot {
   deathRate: number;
   dominantBuildPercent: number;
   sessionsSampled: number;
-  flags: Record<string, any>;
-  recommendations: Record<string, any>;
+  flags: Record<string, Record<string, unknown>>;
+  recommendations: Record<string, string>;
 }
 
 /**
@@ -240,10 +240,10 @@ export async function computeCombatMetrics(
     totalRounds += row.round_number ?? 0;
 
     // Determine win: at least one player alive, all enemies dead
-    const players = participants.filter((p: any) => p.type === "player");
-    const enemies = participants.filter((p: any) => p.type === "enemy");
-    const playersAlive = players.filter((p: any) => p.hp_current > 0).length;
-    const enemiesAlive = enemies.filter((p: any) => p.hp_current > 0).length;
+    const players = participants.filter((p: { type: string }) => p.type === "player");
+    const enemies = participants.filter((p: { type: string }) => p.type === "enemy");
+    const playersAlive = players.filter((p: { hp_current: number }) => p.hp_current > 0).length;
+    const enemiesAlive = enemies.filter((p: { hp_current: number }) => p.hp_current > 0).length;
 
     if (playersAlive > 0 && enemiesAlive === 0) winCount++;
 
@@ -268,8 +268,8 @@ export async function computeCombatMetrics(
   const deathRate = sessions > 0 ? deathCount / sessions : 0;
   const { dominant, percent: dominantBuildPercent } = detectDominantBuild(buildCounts);
 
-  const flags: Record<string, any> = {};
-  const recommendations: Record<string, any> = {};
+  const flags: Record<string, Record<string, unknown>> = {};
+  const recommendations: Record<string, string> = {};
 
   if (winRate > 0.9 && sessions >= 3) {
     flags.combat_too_easy = { win_rate: winRate };
@@ -330,7 +330,7 @@ export function recommendDropRateAdjustment(
   if (sellRate > 0.7) adjustment = -0.15; // Too common
   else if (usageRate < 0.2 && dropCount > 5) adjustment = -0.1; // Under-used
   else if (usageRate > 0.8) adjustment = +0.05; // Highly valued
-  
+
   // Cap adjustment at ±30%
   const newRate = currentRate * (1 + adjustment);
   const maxRate = currentRate * 1.3;
@@ -403,7 +403,7 @@ export async function checkFactionDominance(
 
   if (factionsRes.rows.length === 0) return { dominantFactionId: null, dominantPercent: 0, weakestFactionId: null };
 
-  const totalTerritories = factionsRes.rows.reduce((s: number, r: any) => s + (r.territories ?? 0), 0);
+  const totalTerritories = factionsRes.rows.reduce((s: number, r: { territories: number }) => s + (r.territories ?? 0), 0);
   if (totalTerritories === 0) return { dominantFactionId: null, dominantPercent: 0, weakestFactionId: null };
 
   let maxTerr = -1;
@@ -471,7 +471,7 @@ export async function computeProgressionMetrics(
 
   if (charRes.rows.length === 0) return;
 
-  const levels: number[] = charRes.rows.map((r: any) => r.level ?? 1);
+  const levels: number[] = charRes.rows.map((r: { level: number }) => r.level ?? 1);
   const avgLevel = levels.reduce((s, v) => s + v, 0) / levels.length;
 
   const levelDist: Record<string, number> = {};
@@ -480,7 +480,7 @@ export async function computeProgressionMetrics(
     levelDist[key] = (levelDist[key] ?? 0) + 1;
   }
 
-  const softCapTriggers: Record<string, any> = {};
+  const softCapTriggers: Record<string, Record<string, unknown>> = {};
   for (const row of charRes.rows) {
     const needed = computeXpNeeded(row.level ?? 1);
     if ((row.xp ?? 0) > needed * 0.8) {
@@ -563,7 +563,7 @@ export async function runBalancingCycle(client: Client, campaignId: string): Pro
     );
 
     console.log(`[balancingEngine] Cycle ${cycleNumber} complete for campaign ${campaignId}`);
-  } catch (err) {
-    console.error("[balancingEngine] runBalancingCycle error:", err);
+  } catch (err: unknown) {
+    console.error("[balancingEngine] runBalancingCycle error:", err instanceof Error ? err.message : String(err));
   }
 }

@@ -21,14 +21,15 @@ import {
   recordHistoryEvent,
   computeImportance,
 } from "./encyclopediaEngine";
+import { rollDie } from "./diceEngine";
 
 // Helper function to cast postgres rows to Faction
-function rowToFaction(row: any): Faction {
+function rowToFaction(row: Record<string, unknown>): Faction {
   return {
     ...row,
     objectives: typeof row.objectives === "string" ? JSON.parse(row.objectives) : (row.objectives ?? []),
     victory_condition: typeof row.victory_condition === "string" ? JSON.parse(row.victory_condition) : (row.victory_condition ?? {}),
-  };
+  } as Faction;
 }
 
 // Helper to get active campaign cycle
@@ -45,7 +46,7 @@ async function logEvent(
   client: PoolClient | Pool,
   campaignId: string,
   type: "combat" | "quest" | "chat" | "exploration" | "system",
-  payload: Record<string, any>,
+  payload: Record<string, unknown>,
   aiNarration?: string
 ): Promise<string> {
   const res = await client.query(
@@ -145,9 +146,9 @@ export async function selectActions(client: PoolClient | Pool, campaignId: strin
   const npcsRes = await client.query("SELECT id, name FROM public.npcs WHERE campaign_id = $1 AND is_alive = true", [campaignId]);
   const charsRes = await client.query("SELECT id, name FROM public.characters WHERE campaign_id = $1 AND is_alive = true", [campaignId]);
 
-  const locationIds = locationsRes.rows.map((r) => r.id);
-  const npcIds = npcsRes.rows.map((r) => r.id);
-  const charIds = charsRes.rows.map((r) => r.id);
+  const locationIds = locationsRes.rows.map((r: { id: string }) => r.id);
+  const npcIds = npcsRes.rows.map((r: { id: string }) => r.id);
+  const charIds = charsRes.rows.map((r: { id: string }) => r.id);
 
   for (const faction of factions) {
     if (faction.pressure < 50) continue; // Minimum cost for any action is 50
@@ -158,7 +159,7 @@ export async function selectActions(client: PoolClient | Pool, campaignId: strin
        WHERE faction_id = $1 AND campaign_id = $2 AND cooldown_until > now() AND status != 'vetoed'`,
       [faction.id, campaignId]
     );
-    const activeCooldowns = new Set(cooldownRes.rows.map((r) => r.action_type));
+    const activeCooldowns = new Set(cooldownRes.rows.map((r: { action_type: string }) => r.action_type));
 
     // Check if covert capacity is frozen due to a recent nemesis defection/retirement (last 2 days/cycles)
     const freezeRes = await client.query(
@@ -213,25 +214,25 @@ export async function selectActions(client: PoolClient | Pool, campaignId: strin
     let targetId: string | null = null;
 
     if (targetType === "location" && locationIds.length > 0) {
-      targetId = locationIds[Math.floor(Math.random() * locationIds.length)];
+      targetId = locationIds[rollDie(locationIds.length) - 1];
     } else if (targetType === "npc" && npcIds.length > 0) {
-      targetId = npcIds[Math.floor(Math.random() * npcIds.length)];
+      targetId = npcIds[rollDie(npcIds.length) - 1];
     } else if (targetType === "player" && charIds.length > 0) {
-      targetId = charIds[Math.floor(Math.random() * charIds.length)];
+      targetId = charIds[rollDie(charIds.length) - 1];
     } else if (targetType === "faction") {
       // Find a rival or random faction
       const rivals = factions.filter((f) => f.id !== faction.id);
       if (rivals.length > 0) {
-        targetId = rivals[Math.floor(Math.random() * rivals.length)].id;
+        targetId = rivals[rollDie(rivals.length) - 1].id;
       }
     } else if (targetType === "trade_route" && locationIds.length > 0) {
-      targetId = locationIds[Math.floor(Math.random() * locationIds.length)];
+      targetId = locationIds[rollDie(locationIds.length) - 1];
     }
 
     // Fallback target to location if target selection failed
     if (!targetId && locationIds.length > 0) {
       targetType = "location";
-      targetId = locationIds[Math.floor(Math.random() * locationIds.length)];
+      targetId = locationIds[rollDie(locationIds.length) - 1];
     }
 
     if (!targetId) continue; // No target available at all
@@ -368,7 +369,7 @@ export async function resolveAction(
 
   // Apply target-effects
   let targetName = "unknown target";
-  const resultDetails: Record<string, any> = {};
+  const resultDetails: Record<string, unknown> = {};
 
   if (action.target_type === "location" || action.target_type === "trade_route") {
     const locRes = await client.query("SELECT name FROM public.locations WHERE id = $1", [action.target_id]);
@@ -613,7 +614,7 @@ export async function resolveAction(
       );
 
       if (rivalRelationsRes.rows.length > 0) {
-        const selectedRel = rivalRelationsRes.rows[Math.floor(Math.random() * rivalRelationsRes.rows.length)];
+        const selectedRel = rivalRelationsRes.rows[rollDie(rivalRelationsRes.rows.length) - 1];
         const rivalFactionId = selectedRel.faction_a_id === faction.id ? selectedRel.faction_b_id : selectedRel.faction_a_id;
 
         await generateCascadeAction(client, campaignId, action, rivalFactionId, depth);
@@ -638,7 +639,7 @@ export async function generateCascadeAction(
 
   // Pick a military or covert counter-action
   const counterActions: FactionActionType[] = ["sabotage", "raid", "assassination", "blackmail", "patrol"];
-  const selectedType = counterActions[Math.floor(Math.random() * counterActions.length)];
+  const selectedType = counterActions[rollDie(counterActions.length) - 1];
   const cost = FACTION_ACTIONS_CONFIG[selectedType].pressureCost;
 
   // Let the cascade action go through even if they don't have enough pressure, but deduct it down to negative or 0
@@ -1078,7 +1079,7 @@ export async function checkVictoryConditions(client: PoolClient | Pool, campaign
         "SELECT control_percent FROM public.faction_territories WHERE faction_id = $1 AND is_claimed = true",
         [fac.id]
       );
-      const belowMin = terrRes.rows.some((t) => t.control_percent < config.minTerritoryControl);
+      const belowMin = terrRes.rows.some((t: { control_percent: number }) => t.control_percent < config.minTerritoryControl);
       if (belowMin) qualifies = false;
     }
 
@@ -1159,8 +1160,8 @@ export async function runFactionCycle(client: PoolClient | Pool, campaignId: str
     // Step 8: Select new actions for the next cycle
     await selectActions(client, campaignId);
 
-  } catch (err) {
-    console.error("runFactionCycle error:", err);
+  } catch (err: unknown) {
+    console.error("runFactionCycle error:", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -1170,13 +1171,13 @@ export async function runFactionCycle(client: PoolClient | Pool, campaignId: str
 export async function handleFactionQuestCompletion(
   client: PoolClient | Pool,
   campaignId: string,
-  quest: any
+  quest: Record<string, unknown>
 ): Promise<void> {
   const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
-  const factionObjective = objectives.find((obj: any) => obj.action_id);
+  const factionObjective = objectives.find((obj: Record<string, unknown>) => obj.action_id);
   if (!factionObjective) return;
 
-  const actionId = factionObjective.action_id;
+  const actionId = factionObjective.action_id as string;
 
   // Fetch faction action
   const actionRes = await client.query("SELECT * FROM public.faction_actions WHERE id = $1", [actionId]);
@@ -1203,7 +1204,7 @@ export async function handleFactionQuestCompletion(
 
   // Determine reputation changes
   const charactersRes = await client.query("SELECT id FROM public.characters WHERE campaign_id = $1 AND is_alive = true", [campaignId]);
-  const characterIds = charactersRes.rows.map((r) => r.id);
+  const characterIds = charactersRes.rows.map((r: { id: string }) => r.id);
 
   if (action.action_type === "fund_trade_route") {
     // Caravan escort succeeded (helped opposing faction)
@@ -1255,4 +1256,3 @@ export async function handleFactionQuestCompletion(
   // Update reputation tiers
   await updatePlayerReputation(client, campaignId);
 }
-

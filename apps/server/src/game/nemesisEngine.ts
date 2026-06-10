@@ -38,10 +38,10 @@ interface HistoryInput {
 }
 
 function asJson<T>(value: T): T {
-  return typeof value === "string" ? JSON.parse(value) : value;
+  return typeof value === "string" ? JSON.parse(value) as T : value;
 }
 
-function rowToNemesis(row: any): Nemesis {
+function rowToNemesis(row: Record<string, unknown>): Nemesis {
   return {
     ...row,
     traits: asJson(row.traits ?? {}),
@@ -49,15 +49,15 @@ function rowToNemesis(row: any): Nemesis {
     stats: asJson(row.stats ?? {}),
     scars: asJson(row.scars ?? []),
     appearance: asJson(row.appearance ?? {}),
-    minion_ids: row.minion_ids ?? [],
-  };
+    minion_ids: (row.minion_ids as string[]) ?? [],
+  } as Nemesis;
 }
 
-function rowToHistory(row: any): NemesisHistoryEntry {
+function rowToHistory(row: Record<string, unknown>): NemesisHistoryEntry {
   return {
     ...row,
     mechanical_data: asJson(row.mechanical_data ?? {}),
-  };
+  } as NemesisHistoryEntry;
 }
 
 export function generateNemesisName(sourceMonsterId?: string, personality?: NemesisPersonality): string {
@@ -95,7 +95,7 @@ function buildStats(enemy: CombatParticipant, tier: NemesisTier) {
   };
 }
 
-export async function getNemesisById(client: any, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
+export async function getNemesisById(client: PoolClient | Pool, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
   const res = await client.query(
     `SELECT n.*, f.name AS faction_name, l.name AS location_name, c.name AS target_character_name
      FROM public.nemeses n
@@ -109,7 +109,7 @@ export async function getNemesisById(client: any, campaignId: string, nemesisId:
 }
 
 export async function recordNemesisHistory(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   nemesisId: string,
   input: HistoryInput
@@ -133,7 +133,7 @@ export async function recordNemesisHistory(
 }
 
 export async function promoteEnemyToNemesis(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   enemy: CombatParticipant,
   context: PromotionContext
@@ -214,15 +214,15 @@ export async function promoteEnemyToNemesis(
   await handleNemesisQuestIntegration(client, campaignId, nemesis, "promoted");
 
   // Encyclopedia: auto-create entry for the new nemesis
-  void createEntryFromSource(client, "npc", nemesis.id, campaignId).catch((e) =>
-    console.error("[nemesisEngine] encyclopedia createEntryFromSource failed:", e)
+  void createEntryFromSource(client, "npc", nemesis.id, campaignId).catch((e: Error) =>
+    console.error("[nemesisEngine] encyclopedia createEntryFromSource failed:", e.message)
   );
 
   return { nemesis, history };
 }
 
 export async function levelNemesisAfterEncounter(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   nemesisId: string,
   xpGain: number
@@ -278,7 +278,7 @@ export async function levelNemesisAfterEncounter(
 }
 
 export async function applyNemesisScar(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   nemesisId: string,
   seed: string
@@ -352,7 +352,7 @@ export function selectNemesisTarget(nemesis: Pick<Nemesis, "personality" | "targ
   return alivePlayers[0];
 }
 
-export async function evaluateCombatForNemesisPromotion(client: PoolClient, encounter: CombatEncounter, reason: "victory" | "defeat") {
+export async function evaluateCombatForNemesisPromotion(client: PoolClient | Pool, encounter: CombatEncounter, reason: "victory" | "defeat") {
   const enemies = encounter.participants.filter((p) => p.type === "enemy");
   const existingNemeses = enemies.filter((enemy) => enemy.nemesis_id);
 
@@ -448,7 +448,7 @@ export async function evaluateCombatForNemesisPromotion(client: PoolClient, enco
   RoomManager.broadcastToRoom(encounter.campaign_id, "NEMESIS_UPDATE", { nemesis, history_entry: history, reason: "promoted" });
 }
 
-export async function triggerNemesisAmbush(client: any, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
+export async function triggerNemesisAmbush(client: PoolClient | Pool, campaignId: string, nemesisId: string): Promise<Nemesis | null> {
   const res = await client.query(
     "UPDATE public.nemeses SET status = 'ambushing', last_seen_at = now() WHERE id = $1 AND campaign_id = $2 RETURNING *",
     [nemesisId, campaignId]
@@ -469,7 +469,7 @@ export async function triggerNemesisAmbush(client: any, campaignId: string, neme
 }
 
 export async function assignSuccessor(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   deadNemesisId: string
 ): Promise<Nemesis | null> {
@@ -596,7 +596,7 @@ export function coordinateNemesisMinions(
 }
 
 export async function handleNemesisQuestIntegration(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   nemesis: Nemesis,
   eventType: "promoted" | "killed" | "tiered_up" | "successor",
@@ -608,25 +608,25 @@ export async function handleNemesisQuestIntegration(
         "SELECT id, objectives FROM public.quests WHERE campaign_id = $1 AND status = 'active'",
         [campaignId]
       );
-      
+
       let hasActiveQuest = false;
       for (const row of existingRes.rows) {
         const objectives = Array.isArray(row.objectives) ? row.objectives : [];
-        if (objectives.some((obj: any) => obj.nemesis_id === nemesis.id)) {
+        if (objectives.some((obj: Record<string, unknown>) => obj.nemesis_id === nemesis.id)) {
           hasActiveQuest = true;
           break;
         }
       }
 
       if (!hasActiveQuest) {
-        let rewards: Record<string, any> = { gold: 100, xp: 150 };
+        let rewards: Record<string, number> = { gold: 100, xp: 150 };
         if (nemesis.tier === "lieutenant") rewards = { gold: 250, xp: 300 };
         else if (nemesis.tier === "warlord") rewards = { gold: 600, xp: 800 };
         else if (nemesis.tier === "archnemesis") rewards = { gold: 1500, xp: 2000 };
 
         let title = `Defeat ${nemesis.name}`;
         let description = `A new threat has arisen. ${nemesis.name} ${nemesis.epithet || ""} must be stopped.`;
-        let objectives: any[] = [];
+        let objectives: Record<string, unknown>[] = [];
 
         if ((nemesis.tier === "warlord" || nemesis.tier === "archnemesis") && nemesis.faction_id) {
           title = `Break Faction Hold: ${nemesis.name}`;
@@ -676,7 +676,7 @@ export async function handleNemesisQuestIntegration(
         }
 
         if (updated) {
-          const allCompleted = objectives.every((obj: any) => obj.completed);
+          const allCompleted = objectives.every((obj: Record<string, unknown>) => obj.completed);
           const nextStatus = allCompleted ? "complete" : "active";
           const updatedQuestRes = await client.query(
             `UPDATE public.quests
@@ -712,7 +712,7 @@ export async function handleNemesisQuestIntegration(
 
       for (const row of questsRes.rows) {
         const objectives = Array.isArray(row.objectives) ? row.objectives : [];
-        if (objectives.some((obj: any) => obj.nemesis_id === nemesis.id)) {
+        if (objectives.some((obj: Record<string, unknown>) => obj.nemesis_id === nemesis.id)) {
           const currentRewards = row.rewards || {};
           const nextRewards = {
             ...currentRewards,
@@ -720,7 +720,7 @@ export async function handleNemesisQuestIntegration(
             xp: Math.ceil((currentRewards.xp || 150) * 1.5),
           };
 
-          const nextObjectives = objectives.map((obj: any) => {
+          const nextObjectives = objectives.map((obj: Record<string, unknown>) => {
             if (obj.nemesis_id === nemesis.id) {
               return {
                 ...obj,
@@ -753,7 +753,7 @@ export async function handleNemesisQuestIntegration(
 
       for (const row of questsRes.rows) {
         const objectives = Array.isArray(row.objectives) ? [...row.objectives] : [];
-        if (objectives.some((obj: any) => obj.nemesis_id === oldNemesisId)) {
+        if (objectives.some((obj: Record<string, unknown>) => obj.nemesis_id === oldNemesisId)) {
           objectives.push({
             text: `Defeat the successor, ${nemesis.name} ${nemesis.epithet || ""}`,
             completed: false,
@@ -774,8 +774,7 @@ export async function handleNemesisQuestIntegration(
         }
       }
     }
-  } catch (err) {
-    console.error("handleNemesisQuestIntegration error:", err);
+  } catch (err: unknown) {
+    console.error("handleNemesisQuestIntegration error:", err instanceof Error ? err.message : String(err));
   }
 }
-

@@ -31,22 +31,22 @@ type Client = Pool | PoolClient;
 // ============================================================
 
 function asJson<T>(value: T): T {
-  return typeof value === "string" ? JSON.parse(value) : value;
+  return typeof value === "string" ? JSON.parse(value) as T : value;
 }
 
-function rowToEntry(row: any): EncyclopediaEntry {
+function rowToEntry(row: Record<string, unknown>): EncyclopediaEntry {
   return {
     ...row,
     full_content: asJson(row.full_content ?? {}),
-    tags: row.tags ?? [],
-  };
+    tags: (row.tags as string[]) ?? [],
+  } as EncyclopediaEntry;
 }
 
-function rowToHistory(row: any): EncyclopediaHistoryEvent {
+function rowToHistory(row: Record<string, unknown>): EncyclopediaHistoryEvent {
   return {
     ...row,
-    involved_entry_ids: row.involved_entry_ids ?? [],
-  };
+    involved_entry_ids: (row.involved_entry_ids as string[]) ?? [],
+  } as EncyclopediaHistoryEvent;
 }
 
 // ============================================================
@@ -75,7 +75,7 @@ export async function createEntryFromSource(
     let title = "Unknown";
     let subtitle: string | null = null;
     let summary: string | null = null;
-    const fullContent: Record<string, any> = {};
+    const fullContent: Record<string, unknown> = {};
 
     if (sourceType === "npc") {
       const res = await client.query("SELECT name, role, location_id FROM public.npcs WHERE id = $1", [sourceId]);
@@ -131,8 +131,8 @@ export async function createEntryFromSource(
     const entry = rowToEntry(res.rows[0]);
     RoomManager.broadcastToRoom(campaignId, "ENCYCLOPEDIA_ENTRY_UPDATED", { entry, reason: "created" });
     return entry;
-  } catch (err) {
-    console.error("[encyclopediaEngine] createEntryFromSource error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] createEntryFromSource error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -144,7 +144,7 @@ export async function updateEntryFromEvent(
   client: Client,
   entryId: string,
   campaignId: string,
-  eventData: Record<string, any>,
+  eventData: Record<string, unknown>,
   importanceGain = 0
 ): Promise<EncyclopediaEntry | null> {
   try {
@@ -161,8 +161,8 @@ export async function updateEntryFromEvent(
     const entry = rowToEntry(res.rows[0]);
     RoomManager.broadcastToRoom(campaignId, "ENCYCLOPEDIA_ENTRY_UPDATED", { entry, reason: "updated" });
     return entry;
-  } catch (err) {
-    console.error("[encyclopediaEngine] updateEntryFromEvent error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] updateEntryFromEvent error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -233,8 +233,8 @@ export async function recordHistoryEvent(
     }
 
     return event;
-  } catch (err) {
-    console.error("[encyclopediaEngine] recordHistoryEvent error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] recordHistoryEvent error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -314,8 +314,8 @@ export async function evaluateEraChange(
       narrative: `A new era has begun: ${eraName}`,
     });
     return era;
-  } catch (err) {
-    console.error("[encyclopediaEngine] evaluateEraChange error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] evaluateEraChange error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -390,8 +390,8 @@ export async function grantKnowledge(
     });
 
     return knowledge;
-  } catch (err) {
-    console.error("[encyclopediaEngine] grantKnowledge error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] grantKnowledge error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -429,8 +429,8 @@ export async function getFilteredEntry(
 
     const filteredContent = getContentAtKnowledgeLevel(entry, level);
     return { ...entry, filtered_content: filteredContent, knowledge_level: level };
-  } catch (err) {
-    console.error("[encyclopediaEngine] getFilteredEntry error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] getFilteredEntry error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -475,8 +475,8 @@ export async function spreadRumor(
       "UPDATE public.rumors SET spread_count = spread_count + $1 WHERE id = $2",
       [characterIds.length, rumor.id]
     );
-  } catch (err) {
-    console.error("[encyclopediaEngine] spreadRumor error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] spreadRumor error:", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -508,7 +508,7 @@ export async function resolveRumor(
       "SELECT character_id FROM public.character_rumors WHERE rumor_id = $1",
       [rumorId]
     );
-    const characterIds: string[] = charRumorRes.rows.map((r) => r.character_id);
+    const characterIds: string[] = charRumorRes.rows.map((r: { character_id: string }) => r.character_id);
 
     const narrative = isTrue
       ? `The rumor about "${rumor.content.slice(0, 60)}..." proved to be TRUE.`
@@ -538,8 +538,8 @@ export async function resolveRumor(
       is_true: isTrue,
       narrative,
     });
-  } catch (err) {
-    console.error("[encyclopediaEngine] resolveRumor error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] resolveRumor error:", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -554,7 +554,7 @@ export function generateBiography(
   entry: EncyclopediaEntry,
   historyEvents: EncyclopediaHistoryEvent[]
 ): string {
-  const content = entry.full_content;
+  const content = entry.full_content as Record<string, unknown>;
   const events = [...historyEvents].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
 
   const lines: string[] = [];
@@ -564,7 +564,7 @@ export function generateBiography(
   }
 
   if (content.biography_short || entry.summary) {
-    lines.push(content.biography_short || entry.summary);
+    lines.push((content.biography_short as string) || entry.summary || "");
   }
 
   if (events.length > 0) {
@@ -575,8 +575,8 @@ export function generateBiography(
     }
   }
 
-  if (content.known_for && content.known_for.length > 0) {
-    lines.push(`\n**Known for:** ${content.known_for.join(", ")}`);
+  if (content.known_for && (content.known_for as string[]).length > 0) {
+    lines.push(`\n**Known for:** ${(content.known_for as string[]).join(", ")}`);
   }
 
   if (entry.custom_lore) {
@@ -593,7 +593,7 @@ export function generateFactionHistory(
   entry: EncyclopediaEntry,
   historyEvents: EncyclopediaHistoryEvent[]
 ): string {
-  const content = entry.full_content;
+  const content = entry.full_content as Record<string, unknown>;
   const events = [...historyEvents].sort((a, b) => (a.year ?? 0) - (b.year ?? 0));
 
   const lines: string[] = [];
@@ -603,8 +603,8 @@ export function generateFactionHistory(
 
   if (content.leadership) lines.push(`**Current Leadership:** ${content.leadership}`);
 
-  if (content.known_goals?.length > 0) {
-    lines.push(`**Known Goals:** ${content.known_goals.join(", ")}`);
+  if ((content.known_goals as string[])?.length > 0) {
+    lines.push(`**Known Goals:** ${(content.known_goals as string[]).join(", ")}`);
   }
 
   if (events.length > 0) {
@@ -646,8 +646,8 @@ export async function recordArtifactProvenance(
       [campaignId, itemEntryId, ownerType, ownerId, via, year ?? null, notes ?? null]
     );
     return res.rows[0] as ArtifactProvenance;
-  } catch (err) {
-    console.error("[encyclopediaEngine] recordArtifactProvenance error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] recordArtifactProvenance error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -682,11 +682,11 @@ export async function generateSessionSummary(
       "SELECT name, race, class FROM public.characters WHERE id = ANY($1::uuid[])",
       [charIds]
     );
-    const characters = charRes.rows.map((c) => `${c.name} (${c.race} ${c.class})`);
+    const characters = charRes.rows.map((c: { name: string; race: string; class: string }) => `${c.name} (${c.race} ${c.class})`);
 
     // Fetch top 10 events by importance
     const eventIds: string[] = session.event_ids;
-    let topEvents: any[] = [];
+    let topEvents: Record<string, unknown>[] = [];
     if (eventIds.length > 0) {
       const eventRes = await client.query(
         `SELECT payload, type FROM public.event_log
@@ -721,16 +721,16 @@ Campaign: ${campaignName}
 Session: #${session.session_number}
 Characters: ${characters.join(", ") || "Unknown"}
 Key events: ${eventSummaries.slice(0, 10).join("; ") || "No major events"}
-Nemeses encountered: ${nemesisRes.rows.map((n) => `${n.name} ${n.epithet || ""} (${n.tier})`).join(", ") || "None"}
-Factions active: ${factionRes.rows.map((f) => f.name).join(", ") || "None"}
+Nemeses encountered: ${nemesisRes.rows.map((n: { name: string; epithet: string | null; tier: string }) => `${n.name} ${n.epithet || ""} (${n.tier})`).join(", ") || "None"}
+Factions active: ${factionRes.rows.map((f: { name: string }) => f.name).join(", ") || "None"}
 
 Generate a narrative summary of this session.`;
 
     let summary = "";
     try {
       summary = await dmService.generateSessionSummary(prompt);
-    } catch (aiErr) {
-      console.error("[encyclopediaEngine] AI summary generation failed:", aiErr);
+    } catch (aiErr: unknown) {
+      console.error("[encyclopediaEngine] AI summary generation failed:", aiErr instanceof Error ? aiErr.message : String(aiErr));
       summary = `Session ${session.session_number} summary could not be generated automatically. Key events: ${eventSummaries.slice(0, 5).join("; ")}.`;
     }
 
@@ -751,8 +751,8 @@ Generate a narrative summary of this session.`;
     });
 
     return updated;
-  } catch (err) {
-    console.error("[encyclopediaEngine] generateSessionSummary error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] generateSessionSummary error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -774,7 +774,7 @@ export async function searchEncyclopedia(
   limit = 20
 ): Promise<Array<EncyclopediaEntry & { knowledge_level: KnowledgeLevel; filtered_content: string }>> {
   try {
-    const sanitized = query.replace(/[%_]/g, "\\$&");
+    const sanitized = query.replace(/[%_]/g, "\$&");
     const pattern = `%${sanitized}%`;
 
     if (isDm) {
@@ -787,7 +787,7 @@ export async function searchEncyclopedia(
          LIMIT $3`,
         [campaignId, pattern, limit]
       );
-      return res.rows.map((row) => {
+      return res.rows.map((row: Record<string, unknown>) => {
         const entry = rowToEntry(row);
         return { ...entry, knowledge_level: 5 as KnowledgeLevel, filtered_content: entry.summary || "" };
       });
@@ -809,14 +809,14 @@ export async function searchEncyclopedia(
       [campaignId, pattern, characterId, limit]
     );
 
-    return res.rows.map((row) => {
+    return res.rows.map((row: Record<string, unknown>) => {
       const entry = rowToEntry(row);
       const level = (row.knowledge_level ?? 1) as KnowledgeLevel;
       const filteredContent = getContentAtKnowledgeLevel(entry, level);
       return { ...entry, knowledge_level: level, filtered_content: filteredContent };
     });
-  } catch (err) {
-    console.error("[encyclopediaEngine] searchEncyclopedia error:", err);
+  } catch (err: unknown) {
+    console.error("[encyclopediaEngine] searchEncyclopedia error:", err instanceof Error ? err.message : String(err));
     return [];
   }
 }
@@ -832,7 +832,7 @@ export async function getEncyclopediaForCharacter(
   category?: EncyclopediaCategory
 ): Promise<Array<EncyclopediaEntry & { knowledge_level: KnowledgeLevel }>> {
   const categoryFilter = category ? "AND e.category = $4" : "";
-  const params: any[] = [campaignId, characterId, 1];
+  const params: (string | number)[] = [campaignId, characterId, 1];
   if (category) params.push(category);
 
   const res = await client.query(
@@ -847,7 +847,7 @@ export async function getEncyclopediaForCharacter(
     params
   );
 
-  return res.rows.map((row) => ({
+  return res.rows.map((row: Record<string, unknown>) => ({
     ...rowToEntry(row),
     knowledge_level: row.knowledge_level as KnowledgeLevel,
   }));

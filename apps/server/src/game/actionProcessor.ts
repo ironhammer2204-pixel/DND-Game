@@ -52,7 +52,7 @@ export interface ProcessedAction {
   worldUpdate?: ServerMessageMap["WORLD_UPDATE"];
   narration?: string;
   combatStarted?: boolean;
-  skillCheck?: any;
+  skillCheck?: Record<string, unknown>;
 }
 
 const VALID_ACTION_TYPES = new Set<ActionType>([
@@ -295,7 +295,7 @@ async function processSkillCheckAction(
       payload,
       timestamp: logRes.rows[0].created_at,
     },
-    skillCheck: result,
+    skillCheck: result as unknown as Record<string, unknown>,
   };
 }
 
@@ -335,8 +335,8 @@ async function processMovementAction(
     [participant.campaignId, [currentLocationId, targetLocationId]]
   );
 
-  const currentLocation = locationsRes.rows.find((loc) => loc.id === currentLocationId);
-  const targetLocation = locationsRes.rows.find((loc) => loc.id === targetLocationId);
+  const currentLocation = locationsRes.rows.find((loc: { id: string }) => loc.id === currentLocationId);
+  const targetLocation = locationsRes.rows.find((loc: { id: string }) => loc.id === targetLocationId);
 
   if (!currentLocation || !targetLocation) {
     throw new Error("Location not found in this campaign");
@@ -708,7 +708,7 @@ async function processGenericAction(
       const campaignMeta = snapshot.meta;
       const systemPrompt = campaignMeta ? buildSystemPrompt(campaignMeta) : undefined;
 
-      dmService.enqueueAction(client as any, logRes.rows[0].id, participant.campaignId, {
+      dmService.enqueueAction(client as unknown as Pool, logRes.rows[0].id, participant.campaignId, {
         campaignId: participant.campaignId,
         party: snapshot.party,
         location: snapshot.location || { name: "unknown", description: "" },
@@ -719,8 +719,8 @@ async function processGenericAction(
         actionDescription: actionText,
         serverResult: `Classified as ${intent.intent} (confidence: ${Math.round(intent.confidence * 100)}%)`,
       });
-    } catch (err) {
-      console.error("[actionProcessor] DM narration enqueue failed:", err);
+    } catch (err: unknown) {
+      console.error("[actionProcessor] DM narration enqueue failed:", err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -781,7 +781,7 @@ export async function processPlayerAction(
       const result = await processMovementAction(client, participant, characterName, input.target_location_id);
       await client.query("COMMIT");
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       await client.query("ROLLBACK");
       throw error;
     } finally {
@@ -796,7 +796,7 @@ export async function processPlayerAction(
       const result = await processSkillCheckAction(client, participant, characterName, text);
       await client.query("COMMIT");
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       await client.query("ROLLBACK");
       throw error;
     } finally {
@@ -811,7 +811,7 @@ export async function processPlayerAction(
       const result = await processFreeFormAction(client, participant, characterName, text);
       await client.query("COMMIT");
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       await client.query("ROLLBACK");
       throw error;
     } finally {

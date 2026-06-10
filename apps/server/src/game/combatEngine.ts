@@ -4,7 +4,7 @@ import { dmService } from "../ai/dmService";
 import { NemesisContext } from "../ai/promptTemplates";
 import { buildCampaignSnapshot, getLocationContext, getActiveNemesisContext, getCampaignLocationId, getPartyContext } from "../ai/contextBuilder";
 import { MONSTERS, CombatParticipant, CombatEncounter } from "@dnd/shared";
-import { rollDice, rollWithAdvantage, rollWithDisadvantage } from "./diceEngine";
+import { rollDice, rollWithAdvantage, rollWithDisadvantage, rollDie } from "./diceEngine";
 import { RoomManager } from "../websocket/roomManager";
 import { evaluateCombatForNemesisPromotion, getNemesisById, selectNemesisTarget } from "./nemesisEngine";
 import { recordBehaviourEvent, checkQuestObjectives } from "./worldEngine.js";
@@ -13,7 +13,7 @@ const turnTimers = new Map<string, NodeJS.Timeout>();
 
 function getMonsterFaction(monsterId: string, activeFactionDemands: string[]): string {
   const lowercaseDemands = activeFactionDemands.map(d => d.toLowerCase());
-  
+
   if (monsterId === "goblin") {
     if (lowercaseDemands.includes("syndicate invaders")) return "Syndicate Invaders";
     return "Blackwater Syndicate";
@@ -41,7 +41,7 @@ function parseDamageDice(damageDice: string, modifier: number): number {
   const size = parseInt(match[2], 10);
   let total = 0;
   for (let i = 0; i < count; i++) {
-    const roll = Math.floor(Math.random() * size) + 1;
+    const roll = rollDie(size);
     total += roll;
   }
   return Math.max(1, total + modifier);
@@ -537,7 +537,7 @@ export async function rollDeathSave(campaignId: string, userId: string): Promise
 }
 
 async function performAttackAction(
-  client: any,
+  client: PoolClient | Pool,
   campaignId: string,
   attacker: CombatParticipant,
   targetId: string,
@@ -624,7 +624,7 @@ async function performAttackAction(
               }
             }
           }
-          
+
           let factionName = "Unknown";
           if (target.nemesis_id) {
             const nemesisRes = await client.query(
@@ -691,7 +691,7 @@ async function performAttackAction(
   );
 }
 
-async function advanceTurn(client: any, encounter: CombatEncounter): Promise<void> {
+async function advanceTurn(client: PoolClient | Pool, encounter: CombatEncounter): Promise<void> {
   // 1. Check if combat is resolved (all players dead/downed, or all enemies dead)
   const alivePlayers = encounter.participants.filter((p) => p.type === "player" && p.hp_current > 0);
   const unstablePlayers = encounter.participants.filter(
@@ -749,7 +749,7 @@ async function advanceTurn(client: any, encounter: CombatEncounter): Promise<voi
   await saveEncounter(client, encounter);
 }
 
-async function resolveCombatWithVictory(client: any, encounter: CombatEncounter): Promise<void> {
+async function resolveCombatWithVictory(client: PoolClient | Pool, encounter: CombatEncounter): Promise<void> {
   encounter.status = "resolved";
   await client.query("UPDATE public.combat_encounters SET status = 'resolved' WHERE id = $1", [encounter.id]);
   await evaluateCombatForNemesisPromotion(client, encounter, "victory");
@@ -827,7 +827,7 @@ async function resolveCombatWithVictory(client: any, encounter: CombatEncounter)
   }
 }
 
-async function resolveCombatWithDefeat(client: any, encounter: CombatEncounter): Promise<void> {
+async function resolveCombatWithDefeat(client: PoolClient | Pool, encounter: CombatEncounter): Promise<void> {
   encounter.status = "resolved";
   await client.query("UPDATE public.combat_encounters SET status = 'resolved' WHERE id = $1", [encounter.id]);
   await evaluateCombatForNemesisPromotion(client, encounter, "defeat");
@@ -916,7 +916,7 @@ export function processActiveTurn(campaignId: string, encounterId: string) {
                   { personality: activeParticipant.personality, target_character_id: activeParticipant.grudge_target_id },
                   alivePlayers
                 ) || alivePlayers[0]
-              : alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+              : alivePlayers[Math.floor(rollDie(alivePlayers.length)) - 1];
             await performAttackAction(client, campaignId, activeParticipant, target.id, encounter);
           }
         }
@@ -976,9 +976,9 @@ export function processActiveTurn(campaignId: string, encounterId: string) {
       }
 
       await client.query("COMMIT");
-    } catch (err) {
+    } catch (err: unknown) {
       await client.query("ROLLBACK");
-      console.error("Error in automated combat step:", err);
+      console.error("Error in automated combat step:", err instanceof Error ? err.message : String(err));
     } finally {
       client.release();
     }

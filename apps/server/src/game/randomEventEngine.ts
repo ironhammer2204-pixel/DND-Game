@@ -167,8 +167,8 @@ export async function tickRandomEvent(
       text: seed,
       timestamp: logRes.rows[0].created_at,
     });
-  } catch (err) {
-    console.error("[randomEventEngine] broadcast failed:", err);
+  } catch (err: unknown) {
+    console.error("[randomEventEngine] broadcast failed:", err instanceof Error ? err.message : String(err));
   }
 
   return { triggered: true, event: seed, seed };
@@ -238,8 +238,8 @@ export async function tickShopRestock(
         text: "Merchants have restocked their wares.",
         timestamp: new Date().toISOString(),
       });
-    } catch (err) {
-      console.error("[randomEventEngine] shop restock broadcast failed:", err);
+    } catch (err: unknown) {
+      console.error("[randomEventEngine] shop restock broadcast failed:", err instanceof Error ? err.message : String(err));
     }
   }
 }
@@ -305,10 +305,10 @@ export async function runRandomEventTick(
         weather_effects: weatherEffects,
         time_effects: timeEffects,
       });
-    } catch (err) {
-      console.error("[randomEventEngine] world state broadcast failed:", err);
+    } catch (err: unknown) {
+      console.error("[randomEventEngine] world state broadcast failed:", err instanceof Error ? err.message : String(err));
     }
-  } catch (err) {
-    console.error("[randomEventEngine] tick failed:", err);
+  } catch (err: unknown) {
+    console.error("[randomEventEngine] tick failed:", err instanceof Error ? err.message : String(err));
   }
 }

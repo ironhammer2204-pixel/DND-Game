@@ -186,7 +186,7 @@ async function callGroq(userPrompt: string): Promise<string> {
 let lastNarrationSuccess: string | null = null;
 
 async function saveNarration(
-  pool: any,
+  pool: Pool,
   eventLogId: string,
   narration: string,
   campaignId: string
@@ -220,7 +220,7 @@ interface NarrationJobPayload {
   eventLogId: string;
   campaignId: string;
   promptType: string;
-  ctx: any;
+  ctx: Record<string, unknown>;
 }
 
 interface IntentClassificationPayload {
@@ -229,41 +229,48 @@ interface IntentClassificationPayload {
   actionText: string;
 }
 
-async function handleNarrationJob(jobs: any[]): Promise<void> {
+interface PgBossJob {
+  id: string;
+  name: string;
+  data: Record<string, unknown>;
+}
+
+async function handleNarrationJob(jobs: PgBossJob[]): Promise<void> {
   for (const job of jobs) {
-    const { eventLogId, campaignId, promptType, ctx } = job.data;
+    const data = job.data as unknown as NarrationJobPayload;
+    const { eventLogId, campaignId, promptType, ctx } = data;
 
     let prompt = "";
     switch (promptType) {
       case "combat_start":
-        prompt = buildCombatStartPrompt(ctx);
+        prompt = buildCombatStartPrompt(ctx as unknown as CombatNarrationContext);
         break;
       case "combat_round":
-        prompt = buildCombatRoundPrompt(ctx);
+        prompt = buildCombatRoundPrompt(ctx as unknown as CombatRoundContext);
         break;
       case "combat_victory":
-        prompt = buildCombatVictoryPrompt(ctx);
+        prompt = buildCombatVictoryPrompt(ctx as unknown as CombatVictoryContext);
         break;
       case "combat_defeat":
-        prompt = buildCombatDefeatPrompt(ctx);
+        prompt = buildCombatDefeatPrompt(ctx as unknown as CombatDefeatContext);
         break;
       case "death_save":
-        prompt = buildDeathSavePrompt(ctx);
+        prompt = buildDeathSavePrompt(ctx as unknown as DeathSaveContext);
         break;
       case "movement":
-        prompt = buildMovementPrompt(ctx);
+        prompt = buildMovementPrompt(ctx as unknown as MovementNarrationContext);
         break;
       case "skill_check":
-        prompt = buildSkillCheckPrompt(ctx);
+        prompt = buildSkillCheckPrompt(ctx as unknown as SkillCheckContext);
         break;
       case "action":
-        prompt = buildActionPrompt(ctx);
+        prompt = buildActionPrompt(ctx as unknown as GenericActionContext);
         break;
       case "nemesis_ambush":
-        prompt = buildNemesisAmbushPrompt(ctx);
+        prompt = buildNemesisAmbushPrompt(ctx as unknown as NemesisAmbushContext);
         break;
       case "nemesis_defeated":
-        prompt = buildNemesisDefeatedPrompt(ctx);
+        prompt = buildNemesisDefeatedPrompt(ctx as unknown as NemesisDefeatedContext);
         break;
       default:
         throw new Error(`Unknown promptType: ${promptType}`);
@@ -275,9 +282,10 @@ async function handleNarrationJob(jobs: any[]): Promise<void> {
   }
 }
 
-async function handleIntentClassificationJob(jobs: any[]): Promise<void> {
+async function handleIntentClassificationJob(jobs: PgBossJob[]): Promise<void> {
   for (const job of jobs) {
-    const { characterId, campaignId, actionText } = job.data;
+    const data = job.data as unknown as IntentClassificationPayload;
+    const { characterId, campaignId, actionText } = data;
     try {
       const prompt = `Classify the following RPG character action text into D&D behaviour tags (values 0-5):
 Action: "${actionText}"
@@ -295,7 +303,7 @@ Respond ONLY with a valid JSON object mapping tag names to integer scores. Examp
       });
       const content = completion.choices[0]?.message?.content?.trim() || "{}";
       const cleaned = content.replace(/^```json/, "").replace(/```$/, "").trim();
-      const parsed = JSON.parse(cleaned);
+      const parsed = JSON.parse(cleaned) as Record<string, number>;
 
       const tags = Object.keys(parsed).filter(k => parsed[k] > 0);
       if (tags.length > 0) {
@@ -305,8 +313,8 @@ Respond ONLY with a valid JSON object mapping tag names to integer scores. Examp
           await recordBehaviourEvent(pool, campaignId, characterId, "text_intent", [tag], score);
         }
       }
-    } catch (err) {
-      console.error("[dmService] Intent classification failed:", err);
+    } catch (err: unknown) {
+      console.error("[dmService] Intent classification failed:", err instanceof Error ? err.message : String(err));
     }
   }
 }
@@ -316,18 +324,20 @@ export async function startBoss(): Promise<void> {
     console.warn("[dmService] GROQ_API_KEY not set — pg-boss workers not started");
     return;
   }
-  boss.on("error", (error: any) => console.error("[pg-boss] error:", error));
+  boss.on("error", (error: Error) => console.error("[pg-boss] error:", error));
   await boss.start();
 
   try {
     await boss.createQueue("narration");
-  } catch (err) {
+  } catch (err: unknown) {
     // Ignore duplicate or existing queue errors
+    console.log("[dmService] narration queue already exists");
   }
   try {
     await boss.createQueue("intent-classification");
-  } catch (err) {
+  } catch (err: unknown) {
     // Ignore duplicate or existing queue errors
+    console.log("[dmService] intent-classification queue already exists");
   }
 
   await boss.work("narration", { localConcurrency: 1 }, handleNarrationJob);
@@ -340,9 +350,9 @@ export async function stopBoss(): Promise<void> {
   console.log("[dmService] pg-boss queue stopped");
 }
 
-function enqueueJob(queueName: string, payload: any): void {
+function enqueueJob(queueName: string, payload: Record<string, unknown>): void {
   boss.send(queueName, payload)
-    .catch((err: any) => console.error(`[dmService] boss.send failed for queue ${queueName}:`, err));
+    .catch((err: Error) => console.error(`[dmService] boss.send failed for queue ${queueName}:`, err));
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +365,7 @@ export const dmService = {
   },
 
   enqueueCombatStart(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: CombatNarrationContext
@@ -364,7 +374,7 @@ export const dmService = {
   },
 
   enqueueCombatRound(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: CombatRoundContext
@@ -373,7 +383,7 @@ export const dmService = {
   },
 
   enqueueCombatVictory(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: CombatVictoryContext
@@ -382,7 +392,7 @@ export const dmService = {
   },
 
   enqueueCombatDefeat(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: CombatDefeatContext
@@ -391,7 +401,7 @@ export const dmService = {
   },
 
   enqueueDeathSave(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: DeathSaveContext
@@ -400,7 +410,7 @@ export const dmService = {
   },
 
   enqueueMovement(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: MovementNarrationContext
@@ -409,7 +419,7 @@ export const dmService = {
   },
 
   enqueueSkillCheck(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: SkillCheckContext
@@ -418,7 +428,7 @@ export const dmService = {
   },
 
   enqueueAction(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: GenericActionContext
@@ -427,7 +437,7 @@ export const dmService = {
   },
 
   enqueueNemesisAmbush(
-    pool: any,
+    pool: Pool,
     eventLogId: string,
     campaignId: string,
     ctx: NemesisAmbushContext
@@ -460,8 +470,8 @@ export const dmService = {
         "SELECT COUNT(*) FROM pgboss.job WHERE state IN ('created', 'retry', 'active')"
       );
       return parseInt(res.rows[0].count, 10);
-    } catch (err) {
-      console.error("[dmService] failed to get queue depth:", err);
+    } catch (err: unknown) {
+      console.error("[dmService] failed to get queue depth:", err instanceof Error ? err.message : String(err));
       return 0;
     }
   },
