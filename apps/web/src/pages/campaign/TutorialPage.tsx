@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useCampaign } from "@/context/CampaignContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -98,11 +98,12 @@ const Step: React.FC<{ num: number; text: string; sub?: string }> = ({ num, text
 export const TutorialPage: React.FC = () => {
   const navigate = useNavigate()
   const { activeRole } = useCampaign()
-  const [isRead, setIsRead] = useState(false)
-
-  useEffect(() => {
-    setIsRead(localStorage.getItem(TUTORIAL_KEY) === "true")
-  }, [])
+  const [isRead, setIsRead] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(TUTORIAL_KEY) === "true"
+    }
+    return false
+  })
 
   const markRead = () => {
     localStorage.setItem(TUTORIAL_KEY, "true")
