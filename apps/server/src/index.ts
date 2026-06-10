@@ -12,6 +12,7 @@ import nemesisRouter from "./routes/nemeses";
 import factionRouter from "./routes/factions";
 import encyclopediaRouter from "./routes/encyclopedia";
 import balanceRouter from "./routes/balance";
+import soloRouter from "./routes/solo";
 import { authMiddleware, AuthenticatedRequest } from "./middleware/auth";
 import { authenticateSocket, handleWSMessage } from "./websocket/eventHandlers";
 import { RoomManager } from "./websocket/roomManager";
@@ -62,6 +63,7 @@ app.use("/api/campaigns", nemesisRouter);
 app.use("/api/campaigns", factionRouter);
 app.use("/api/campaigns", encyclopediaRouter);
 app.use("/api/campaigns", balanceRouter);
+app.use("/api/solo", soloRouter);
 
 app.get("/api/auth/me", authMiddleware, (req: AuthenticatedRequest, res) => {
   res.json({ message: "Access granted", user: req.user });
@@ -87,6 +89,8 @@ app.get("/health", async (_req, res) => {
   const wsCount = RoomManager.getConnectionCount();
   const lastSuccess = dmService.getLastSuccess();
 
+  const soloModeReady = true;
+  const encyclopediaSeeded = dbStatus === "ok";
   const isHealthy = dbStatus === "ok";
 
   res.status(isHealthy ? 200 : 500).json({
@@ -96,6 +100,11 @@ app.get("/health", async (_req, res) => {
       groq_api: { status: groqEnabled ? "ok" : "disabled", last_success: lastSuccess },
       queue: { depth: queueDepthValue, max_depth: 100 },
       ws_connections: wsCount,
+      solo_mode: {
+        available: soloModeReady,
+        ai_narration: groqEnabled ? "enabled" : "offline_fallback",
+        encyclopedia: encyclopediaSeeded ? "seedable" : "db_required",
+      },
     },
   });
 });
@@ -223,6 +232,12 @@ server.listen(port, async () => {
   } catch (err) {
     console.error("Failed to start pg-boss on startup:", err);
   }
+
+  console.log(
+    `[Solo Mode] ${dmService.isEnabled() ? "AI DM available (Groq)" : "Offline DM mode active (no API key)"}`,
+  );
+  console.log("[Solo Mode] Encyclopedia will auto-seed on campaign creation");
+  console.log("[Solo Mode] Single-player campaigns available at POST /api/solo/start");
 
   // -------------------------------------------------------------------------
   // Phase I — Automated Balancing Cycle Timer (every 30 minutes)
