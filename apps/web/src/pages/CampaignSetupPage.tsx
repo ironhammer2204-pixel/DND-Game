@@ -17,6 +17,40 @@ function getCampaignIdFromHash(): string {
   return match?.[1] || "";
 }
 
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+type RegenerableElementType = "location" | "npc" | "faction" | "quest" | "nemesis";
+
+interface LocationState {
+  law: "strict" | "moderate" | "lax" | "anarchy";
+  tax_percent: number;
+  patrol_level: "heavy" | "moderate" | "light" | "none";
+  danger_level: "safe" | "low" | "medium" | "high" | "deadly";
+}
+
+interface NemesisSeed {
+  name: string;
+  tier: "soldier" | "lieutenant";
+  personality_preset: "cunning" | "honorable" | "vengeful" | "warlord" | "paranoid";
+  connection_to_hook: string;
+}
+
+interface RegenerateResponse {
+  success: boolean;
+  element_type: string;
+  element_index: number;
+  element: unknown;
+}
+
+interface LaunchResponse {
+  success: boolean;
+  opening_narration: string;
+  campaign_id: string;
+  status: string;
+}
+
 // Step types
 interface CampaignPremise {
   name: string;
@@ -41,7 +75,7 @@ interface WorldExpansionData {
     type: string;
     description: string;
     lore: string;
-    state: any;
+    state: LocationState;
     connected_location_names: string[];
     is_starting_location: boolean;
   }>;
@@ -73,7 +107,7 @@ interface WorldExpansionData {
     rewards: { gold?: number; xp?: number };
   }>;
   random_event_seeds: string[];
-  nemesis_seed?: any;
+  nemesis_seed?: NemesisSeed;
 }
 
 const ALL_THEMES = [
@@ -202,32 +236,56 @@ export default function CampaignSetupPage() {
 
       setWorldData(result);
       setStep(2);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
   // Regenerate element
-  const handleRegenerate = async (elementType: string, index: number) => {
+  const handleRegenerate = async (elementType: RegenerableElementType, index: number) => {
     setRegenerating(`${elementType}-${index}`);
     try {
-      const result = await apiCall("/regenerate-element", { element_type: elementType, element_index: index });
-      // Merge regenerated element into worldData
+      const result = (await apiCall("/regenerate-element", {
+        element_type: elementType,
+        element_index: index,
+      })) as RegenerateResponse;
+
       setWorldData((prev) => {
         if (!prev) return prev;
-        const next = { ...prev };
-        const key = elementType === "nemesis" ? "nemesis_seed" : `${elementType}s`;
-        if (Array.isArray((next as any)[key])) {
-          (next as any)[key][index] = result.element;
-        } else if (key === "nemesis_seed") {
-          next.nemesis_seed = result.element;
+        switch (elementType) {
+          case "location": {
+            const locations = [...prev.locations];
+            locations[index] = result.element as WorldExpansionData["locations"][number];
+            return { ...prev, locations };
+          }
+          case "npc": {
+            const npcs = [...prev.npcs];
+            npcs[index] = result.element as WorldExpansionData["npcs"][number];
+            return { ...prev, npcs };
+          }
+          case "faction": {
+            const factions = [...prev.factions];
+            factions[index] = result.element as WorldExpansionData["factions"][number];
+            return { ...prev, factions };
+          }
+          case "quest": {
+            const quests = [...prev.quests];
+            quests[index] = result.element as WorldExpansionData["quests"][number];
+            return { ...prev, quests };
+          }
+          case "nemesis":
+            return {
+              ...prev,
+              nemesis_seed: result.element as unknown as NemesisSeed,
+            };
+          default:
+            return prev;
         }
-        return next;
       });
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setRegenerating(null);
     }
@@ -241,11 +299,11 @@ export default function CampaignSetupPage() {
     setLoading(true);
     setError("");
     try {
-      const result = await apiCall("/launch", {});
+      const result = (await apiCall("/launch", {})) as LaunchResponse;
       setOpeningNarration(result.opening_narration);
       setStep(4);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

@@ -1,21 +1,28 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["VITE_API_URL", "VITE_WS_URL"],
+  "globalEnv": [
+    "VITE_API_URL",
+    "VITE_WS_URL",
+    "VITE_SUPABASE_URL",
+    "VITE_SUPABASE_ANON_KEY"
+  ],
   "tasks": {
-    "typecheck": {
-      "dependsOn": ["^build"]
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
     },
     "test": {
-      "dependsOn": ["^build", "typecheck"]
-    },
-    "build": {
-      "dependsOn": ["^build", "typecheck", "lint"],
-      "outputs": ["dist/**", "build/**"]
+      "dependsOn": ["^test"]
     },
     "dev": {
+      "dependsOn": ["^dev"],
       "cache": false,
       "persistent": true
     }
