@@ -26,7 +26,7 @@ async function isCampaignDM(userId: string, campaignId: string): Promise<boolean
 // ─── GET /api/campaigns/:campaignId/factions ──────────────────────────────────
 router.get("/:campaignId/factions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -60,7 +60,7 @@ router.get("/:campaignId/factions", authMiddleware, async (req: AuthenticatedReq
 // ─── GET /api/campaigns/:campaignId/factions/relations ─────────────────────────
 router.get("/:campaignId/factions/relations", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -92,7 +92,7 @@ router.get("/:campaignId/factions/relations", authMiddleware, async (req: Authen
 // ─── GET /api/campaigns/:campaignId/factions/reputations ───────────────────────
 router.get("/:campaignId/factions/reputations", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -123,7 +123,7 @@ router.get("/:campaignId/factions/reputations", authMiddleware, async (req: Auth
 // ─── GET /api/campaigns/:campaignId/factions/actions ───────────────────────────
 router.get("/:campaignId/factions/actions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignMember(userId, campaignId))) {
@@ -155,7 +155,7 @@ router.get("/:campaignId/factions/actions", authMiddleware, async (req: Authenti
 // ─── POST /api/campaigns/:campaignId/factions ─────────────────────────────────
 router.post("/:campaignId/factions", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const {
     name,
     type,
@@ -217,7 +217,7 @@ router.post("/:campaignId/factions", authMiddleware, async (req: AuthenticatedRe
 // ─── POST /api/campaigns/:campaignId/factions/engine/pause ─────────────────────
 router.post("/:campaignId/factions/engine/pause", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { pause } = req.body;
 
   try {
@@ -243,7 +243,7 @@ router.post("/:campaignId/factions/engine/pause", authMiddleware, async (req: Au
 // ─── POST /api/campaigns/:campaignId/factions/engine/cycle ─────────────────────
 router.post("/:campaignId/factions/engine/cycle", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignDM(userId, campaignId))) {
@@ -274,7 +274,7 @@ router.post("/:campaignId/factions/engine/cycle", authMiddleware, async (req: Au
 // ─── POST /api/campaigns/:campaignId/actions/:actionId/veto ────────────────────
 router.post("/:campaignId/actions/:actionId/veto", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, actionId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
 
   try {
     if (!(await isCampaignDM(userId, campaignId))) {
@@ -293,7 +293,7 @@ router.post("/:campaignId/actions/:actionId/veto", authMiddleware, async (req: A
 // ─── POST /api/campaigns/:campaignId/factions/:factionId/force ─────────────────
 router.post("/:campaignId/factions/:factionId/force", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId, factionId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { action_type, target_type, target_id } = req.body;
 
   try {
@@ -337,7 +337,7 @@ router.post("/:campaignId/factions/:factionId/force", authMiddleware, async (req
 // ─── PATCH /api/campaigns/:campaignId/factions/relations ──────────────────────
 router.patch("/:campaignId/factions/relations", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const { campaignId } = req.params;
-  const userId = req.user!.id;
+  const userId = req.user!.sub;
   const { faction_a_id, faction_b_id, score, treaty_type, expires_in_days } = req.body;
 
   try {

@@ -46,7 +46,7 @@ async function getCharacterId(campaignId: string, userId: string): Promise<strin
 router.get("/:id/encyclopedia", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const dm = await isDm(campaignId, userId);
     const category = req.query.category as EncyclopediaCategory | undefined;
 
@@ -78,7 +78,7 @@ router.get("/:id/encyclopedia", authMiddleware, async (req: AuthenticatedRequest
 router.get("/:id/encyclopedia/search", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const query = (req.query.q as string) || "";
     const dm = await isDm(campaignId, userId);
     const characterId = dm ? null : await getCharacterId(campaignId, userId);
@@ -98,7 +98,7 @@ router.get("/:id/encyclopedia/search", authMiddleware, async (req: Authenticated
 router.get("/:id/encyclopedia/timeline", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const dm = await isDm(campaignId, userId);
     const characterId = dm ? null : await getCharacterId(campaignId, userId);
 
@@ -135,7 +135,7 @@ router.get("/:id/encyclopedia/eras", authMiddleware, async (req: AuthenticatedRe
 router.get("/:id/encyclopedia/rumors", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const dm = await isDm(campaignId, userId);
 
     if (dm) {
@@ -164,7 +164,7 @@ router.get("/:id/encyclopedia/rumors", authMiddleware, async (req: Authenticated
 router.get("/:id/encyclopedia/:entryId", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, entryId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const dm = await isDm(campaignId, userId);
     const characterId = dm ? null : await getCharacterId(campaignId, userId);
 
@@ -202,7 +202,7 @@ router.get("/:id/encyclopedia/:entryId", authMiddleware, async (req: Authenticat
 router.post("/:id/encyclopedia", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }
@@ -237,7 +237,7 @@ router.post("/:id/encyclopedia", authMiddleware, async (req: AuthenticatedReques
 router.patch("/:id/encyclopedia/:entryId", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, entryId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }
@@ -291,7 +291,7 @@ router.patch("/:id/encyclopedia/:entryId", authMiddleware, async (req: Authentic
 router.post("/:id/encyclopedia/:entryId/knowledge", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, entryId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }
@@ -319,7 +319,7 @@ router.post("/:id/encyclopedia/:entryId/knowledge", authMiddleware, async (req: 
 router.post("/:id/rumors", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }
@@ -349,7 +349,7 @@ router.post("/:id/rumors", authMiddleware, async (req: AuthenticatedRequest, res
 router.patch("/:id/rumors/:rumorId/resolve", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, rumorId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }
@@ -372,7 +372,7 @@ router.patch("/:id/rumors/:rumorId/resolve", authMiddleware, async (req: Authent
 router.get("/:id/sessions", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const dm = await isDm(campaignId, userId);
 
     const sessions = await pool.query(
@@ -395,7 +395,7 @@ router.get("/:id/sessions", authMiddleware, async (req: AuthenticatedRequest, re
 router.get("/:id/sessions/:sessionId", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, sessionId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     const dm = await isDm(campaignId, userId);
 
     const sessionRes = await pool.query(
@@ -417,7 +417,7 @@ router.get("/:id/sessions/:sessionId", authMiddleware, async (req: Authenticated
 router.post("/:id/sessions/:sessionId/summarize", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, sessionId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }
@@ -441,7 +441,7 @@ router.post("/:id/sessions/:sessionId/summarize", authMiddleware, async (req: Au
 router.patch("/:id/sessions/:sessionId", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, sessionId } = req.params;
-    const userId = req.user!.userId;
+    const userId = req.user!.sub;
     if (!(await isDm(campaignId, userId))) {
       return res.status(403).json({ error: "DM role required" });
     }

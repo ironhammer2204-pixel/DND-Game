@@ -20,7 +20,7 @@ async function isDm(campaignId: string, userId: string): Promise<boolean> {
 router.get("/:id/balance/snapshots", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    if (!(await isDm(campaignId, req.user!.userId))) {
+    if (!(await isDm(campaignId, req.user!.sub))) {
       return res.status(403).json({ error: "DM role required" });
     }
     const limit = Math.min(Number(req.query.limit) || 20, 100);
@@ -42,7 +42,7 @@ router.get("/:id/balance/snapshots", authMiddleware, async (req: AuthenticatedRe
 router.get("/:id/balance/alerts", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    if (!(await isDm(campaignId, req.user!.userId))) {
+    if (!(await isDm(campaignId, req.user!.sub))) {
       return res.status(403).json({ error: "DM role required" });
     }
     const alerts = await pool.query(
@@ -63,7 +63,7 @@ router.get("/:id/balance/alerts", authMiddleware, async (req: AuthenticatedReque
 router.patch("/:id/balance/alerts/:alertId/resolve", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId, alertId } = req.params;
-    if (!(await isDm(campaignId, req.user!.userId))) {
+    if (!(await isDm(campaignId, req.user!.sub))) {
       return res.status(403).json({ error: "DM role required" });
     }
     await pool.query(
@@ -84,7 +84,7 @@ router.patch("/:id/balance/alerts/:alertId/resolve", authMiddleware, async (req:
 router.post("/:id/balance/cycle", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    if (!(await isDm(campaignId, req.user!.userId))) {
+    if (!(await isDm(campaignId, req.user!.sub))) {
       return res.status(403).json({ error: "DM role required" });
     }
 
@@ -107,7 +107,7 @@ router.post("/:id/balance/cycle", authMiddleware, async (req: AuthenticatedReque
 router.get("/:id/balance/overrides", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    if (!(await isDm(campaignId, req.user!.userId))) {
+    if (!(await isDm(campaignId, req.user!.sub))) {
       return res.status(403).json({ error: "DM role required" });
     }
     const overrides = await pool.query(
@@ -128,7 +128,7 @@ router.get("/:id/balance/overrides", authMiddleware, async (req: AuthenticatedRe
 router.put("/:id/balance/overrides", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id: campaignId } = req.params;
-    if (!(await isDm(campaignId, req.user!.userId))) {
+    if (!(await isDm(campaignId, req.user!.sub))) {
       return res.status(403).json({ error: "DM role required" });
     }
 

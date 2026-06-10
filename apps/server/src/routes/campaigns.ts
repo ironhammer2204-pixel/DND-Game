@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import { PoolClient } from "pg";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { pool } from "../db/client";
+import { RoomManager } from "../websocket/roomManager";
 
 const router = Router();
 
@@ -88,18 +89,46 @@ async function seedStartingWorld(client: PoolClient, campaignId: string) {
     campaignId,
   ]);
 
-  // Seed initial NPCs for testing/immersion
-  await client.query(
+  // Seed initial NPCs for testing/immersion and extract Eldric's ID
+  const npcRes = await client.query(
     `INSERT INTO public.npcs (campaign_id, name, role, location_id, is_alive, relationship_map, base_stats)
      VALUES
      ($1, $2, $3, $4, true, $5, $6),
      ($7, $8, $9, $10, true, $11, $12),
-     ($13, $14, $15, $16, true, $17, $18)`,
+     ($13, $14, $15, $16, true, $17, $18)
+     RETURNING id, name`,
     [
       campaignId, 'Eldric Ironhammer', 'Blacksmith', townId, '{}', JSON.stringify({ str: 18, cha: 12 }),
       campaignId, 'Mira Shadowstep', 'Scout', wildernessId, '{}', JSON.stringify({ dex: 16, int: 14 }),
       campaignId, 'Brother Thorne', 'Cleric', townId, '{}', JSON.stringify({ wis: 16, con: 14 })
     ]
+  );
+  const townNpcId = npcRes.rows.find((n) => n.name === "Eldric Ironhammer")?.id;
+
+  // Seed initial Faction aligning with database columns
+  await client.query(
+    `INSERT INTO public.factions
+     (campaign_id, name, type, personality, disposition, power_level, description, is_hidden, military, wealth, influence, stability, pressure, pressure_cap, objectives, victory_condition, is_victorious, collapsed)
+     VALUES ($1, 'Blackwater Syndicate', 'criminal', 'expansionist', 'hostile', 15, 'A ruthless crime syndicate controlling the local black market.', false, 15, 30, 10, 80, 0, 1000, '[]'::jsonb, '{}'::jsonb, false, false)`,
+    [campaignId]
+  );
+
+  // Seed initial Quest linked to Eldric Ironhammer
+  const objectives = [
+    { text: "Travel to the Bandit Camp", completed: false },
+    { text: "Eliminate 5 Blackwater Syndicate bandits", completed: false }
+  ];
+  await client.query(
+    `INSERT INTO public.quests (campaign_id, type, title, description, objectives, rewards, status, giver_npc_id)
+     VALUES ($1, 'side', 'Clear the Bandit Hideout', 'The local blacksmith needs you to eliminate outlaws threatening the trade routes.', $2::jsonb, $3::jsonb, 'active', $4)`,
+    [campaignId, JSON.stringify(objectives), JSON.stringify({ gold: 150, xp: 200 }), townNpcId]
+  );
+
+  // Seed initial Encyclopedia Entry with tags bound as postgres array
+  await client.query(
+    `INSERT INTO public.encyclopedia_entries (campaign_id, category, title, subtitle, summary, full_content, importance, tags, is_secret, pinned)
+     VALUES ($1, 'location', 'The Ashen Gate', 'An ancient stone archway sealed by magic', 'A collapsed structure of dark basalt columns in the hills.', '{}'::jsonb, 3, $2::text[], false, true)`,
+    [campaignId, ['ruins', 'dungeon']]
   );
 }
 
@@ -439,6 +468,93 @@ router.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Respon
   } catch (error) {
     console.error("Get campaign details error:", error);
     res.status(500).json({ error: "Internal server error fetching campaign details" });
+  }
+});
+
+// GET /api/campaigns/:id/quests - Fetch campaign quests
+router.get("/:id/quests", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const campaignId = req.params.id;
+  const userId = req.user?.sub;
+
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const membership = await getMembership(campaignId, userId);
+    if (!membership) {
+      return res.status(403).json({ error: "Forbidden: You are not a member of this campaign" });
+    }
+
+    const questsRes = await pool.query(
+      `SELECT * FROM public.quests WHERE campaign_id = $1 ORDER BY created_at DESC`,
+      [campaignId]
+    );
+
+    res.json({ quests: questsRes.rows });
+  } catch (error) {
+    console.error("Fetch quests error:", error);
+    res.status(500).json({ error: "Internal server error fetching quests" });
+  }
+});
+
+// PATCH /api/campaigns/:id/quests/:questId/objective - Update quest objective completion
+router.patch("/:id/quests/:questId/objective", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { id: campaignId, questId } = req.params;
+  const userId = req.user?.sub;
+  const { objective_index, completed } = req.body;
+
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const membership = await getMembership(campaignId, userId);
+    if (!membership || membership.role !== "dm") {
+      return res.status(403).json({ error: "Forbidden: Only the DM can update quest objectives" });
+    }
+
+    const questCheck = await pool.query(
+      `SELECT * FROM public.quests WHERE id = $1 AND campaign_id = $2`,
+      [questId, campaignId]
+    );
+
+    if (questCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Quest not found" });
+    }
+
+    const quest = questCheck.rows[0];
+    const objectives = typeof quest.objectives === "string" ? JSON.parse(quest.objectives) : quest.objectives;
+
+    if (objective_index < 0 || objective_index >= objectives.length) {
+      return res.status(400).json({ error: "Invalid objective index" });
+    }
+
+    objectives[objective_index].completed = completed;
+
+    // Check if all objectives are completed to transition status
+    const allCompleted = objectives.every((obj: any) => obj.completed);
+    const newStatus = allCompleted ? "complete" : "active";
+
+    const updateRes = await pool.query(
+      `UPDATE public.quests
+       SET objectives = $1::jsonb, status = $2, completed_at = $3
+       WHERE id = $4 AND campaign_id = $5
+       RETURNING *`,
+      [
+        JSON.stringify(objectives),
+        newStatus,
+        newStatus === "complete" ? new Date() : null,
+        questId,
+        campaignId
+      ]
+    );
+
+    const updatedQuest = updateRes.rows[0];
+
+    // Broadcast quest update to the room
+    RoomManager.broadcastToRoom(campaignId, "QUEST_UPDATE", { quest: updatedQuest });
+
+    res.json({ quest: updatedQuest });
+  } catch (error) {
+    console.error("Update quest objective error:", error);
+    res.status(500).json({ error: "Internal server error updating quest" });
   }
 });
 

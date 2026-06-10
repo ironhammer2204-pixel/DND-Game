@@ -24,4 +24,5 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: FRONTEND_URL
-        value: https://ironhammer.vercel.app
+        value: https://dnd-game-web-ironhammer2204-6292s-projects.vercel.app
+
