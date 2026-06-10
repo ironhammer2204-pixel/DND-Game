@@ -263,6 +263,47 @@ export const useGameStore = create<GameState>((set, get) => ({
         fetchParty(activeCampaign.id);
         break;
       }
+      case "WORLD_STATE_UPDATE": {
+        const payload = message.payload as ServerMessageMap["WORLD_STATE_UPDATE"];
+        const campaign = get().activeCampaign;
+        if (campaign) {
+          set({
+            activeCampaign: {
+              ...campaign,
+              world_state: {
+                ...campaign.world_state,
+                current_weather: payload.weather,
+                weather: payload.weather,
+                time_of_day: payload.time_of_day,
+                campaign_day: payload.campaign_day,
+                weather_effects: payload.weather_effects,
+                time_effects: payload.time_effects,
+              },
+            },
+          });
+        }
+        break;
+      }
+      case "CAMPAIGN_LAUNCHED": {
+        const payload = message.payload as ServerMessageMap["CAMPAIGN_LAUNCHED"];
+        appendEvent({
+          id: `launch-${payload.campaign_id}`,
+          type: "system",
+          payload: { text: payload.opening_narration },
+          timestamp: new Date().toISOString(),
+        });
+        break;
+      }
+      case "WORLD_EVENT": {
+        const payload = message.payload as ServerMessageMap["WORLD_EVENT"];
+        appendEvent({
+          id: payload.event_id,
+          type: "system",
+          payload: { text: payload.text, world_event: true },
+          timestamp: payload.timestamp,
+        });
+        break;
+      }
       case "DICE_RESULT": {
         const payload = message.payload as ServerMessageMap["DICE_RESULT"];
         get().enqueueRoll(payload);

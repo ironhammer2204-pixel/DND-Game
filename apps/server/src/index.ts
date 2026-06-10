@@ -105,6 +105,13 @@ app.get("/health", async (_req, res) => {
         ai_narration: groqEnabled ? "enabled" : "offline_fallback",
         encyclopedia: encyclopediaSeeded ? "seedable" : "db_required",
       },
+      story_mode: {
+        available: true,
+        ai_narration: groqEnabled ? "enabled" : "offline_fallback",
+        dice_engine: "canonical",
+        world_expansion: true,
+        random_events: true,
+      },
     },
   });
 });
@@ -238,6 +245,9 @@ server.listen(port, async () => {
   );
   console.log("[Solo Mode] Encyclopedia will auto-seed on campaign creation");
   console.log("[Solo Mode] Single-player campaigns available at POST /api/solo/start");
+  console.log("[Engine] Dice engine: canonical (crypto-quality)");
+  console.log(`[Engine] World expansion: ${dmService.isEnabled() ? "AI + fallback" : "fallback only"}`);
+  console.log("[Engine] Random events: weather, time, encounters, mood shifts");
 
   // -------------------------------------------------------------------------
   // Phase I — Automated Balancing Cycle Timer (every 30 minutes)

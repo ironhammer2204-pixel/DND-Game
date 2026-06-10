@@ -3,10 +3,6 @@
  *
  * Assembles read-only context snapshots from the DB for AI DM prompts.
  * These functions NEVER write. They return plain objects — never raw DB rows.
- * The AI sees only what is in the returned snapshot. Nothing else.
- *
- * Uses the shared `pg` pool (same one used by game engines) so all reads
- * happen inside the same transaction context when needed.
  */
 
 import { Pool, PoolClient } from "pg";
@@ -19,14 +15,50 @@ import type {
   NemesisContext,
 } from "./promptTemplates";
 
+export interface CampaignMeta {
+  name: string;
+  tone: string;
+  world_summary: string;
+  opening_narration: string;
+  random_event_seeds: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Meta
+// ---------------------------------------------------------------------------
+
+export async function buildCampaignMeta(
+  client: Pool | PoolClient,
+  campaignId: string
+): Promise<CampaignMeta | null> {
+  try {
+    const res = await client.query(
+      "SELECT name, settings, world_state FROM public.campaigns WHERE id = $1",
+      [campaignId]
+    );
+    if (res.rows.length === 0) return null;
+
+    const row = res.rows[0];
+    const settings = row.settings || {};
+    const worldState = row.world_state || {};
+
+    return {
+      name: row.name,
+      tone: settings.tone || "dark",
+      world_summary: worldState.world_summary || "A dark fantasy world where empires crumble and ancient powers stir beneath the earth.",
+      opening_narration: worldState.opening_narration || "",
+      random_event_seeds: worldState.random_event_seeds || [],
+    };
+  } catch (err) {
+    console.error("[contextBuilder] buildCampaignMeta error:", err);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Party
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the current state of every active player-character in a campaign.
- * Only includes characters that are campaign_members with status = 'active'.
- */
 export async function getPartyContext(
   client: Pool | PoolClient,
   campaignId: string
@@ -52,9 +84,6 @@ export async function getPartyContext(
 // Location
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the display-safe fields for a location.
- */
 export async function getLocationContext(
   client: Pool | PoolClient,
   locationId: string
@@ -77,10 +106,6 @@ export async function getLocationContext(
   };
 }
 
-/**
- * Returns the location_id for a campaign's current location.
- * Characters in the campaign share a single campaign-level location.
- */
 export async function getCampaignLocationId(
   client: Pool | PoolClient,
   campaignId: string
@@ -96,10 +121,6 @@ export async function getCampaignLocationId(
 // NPCs
 // ---------------------------------------------------------------------------
 
-/**
- * Returns NPCs present in the given location, with their relationship value
- * toward the party (averaged across all party members, or 0 if none stored).
- */
 export async function getNpcsAtLocation(
   client: Pool | PoolClient,
   locationId: string,
@@ -119,15 +140,14 @@ export async function getNpcsAtLocation(
      ORDER BY n.name`,
     [locationId, campaignId]
   );
-  return rows.map(r => {
-    // Calculate average trust
+  return rows.map((r) => {
     const map = r.relationship_map || {};
     const values = Object.values(map);
-    const avgTrust = values.length > 0
-      ? values.reduce((sum, val) => sum + val, 0) / values.length
-      : 0;
+    const avgTrust =
+      values.length > 0
+        ? values.reduce((sum, val) => sum + val, 0) / values.length
+        : 0;
 
-    // Determine disposition hint
     let hint = "neutral";
     const state = r.agenda_state || {};
     if (state.blocked_reason) {
@@ -153,10 +173,6 @@ export async function getNpcsAtLocation(
 // Quests
 // ---------------------------------------------------------------------------
 
-/**
- * Returns active quests for a campaign. Only exposes title + current objective —
- * never internal IDs, reward amounts, or hidden flags.
- */
 export async function getActiveQuestContext(
   client: Pool | PoolClient,
   campaignId: string
@@ -173,7 +189,7 @@ export async function getActiveQuestContext(
      ORDER BY created_at ASC`,
     [campaignId]
   );
-  return rows.map(r => ({
+  return rows.map((r) => ({
     title: r.title,
     status: r.status as QuestContext["status"],
     current_objective: r.current_objective,
@@ -184,10 +200,6 @@ export async function getActiveQuestContext(
 // Event history
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the last N event_log entries for a campaign, summarised.
- * AI narration text itself is excluded to avoid circular self-reinforcement.
- */
 export async function getRecentEvents(
   client: Pool | PoolClient,
   campaignId: string,
@@ -201,18 +213,13 @@ export async function getRecentEvents(
      LIMIT $2`,
     [campaignId, limit]
   );
-  // Return in chronological order (oldest first) for narrative coherence
-  return rows.reverse().map(r => ({ summary: r.summary }));
+  return rows.reverse().map((r) => ({ summary: r.summary }));
 }
 
 // ---------------------------------------------------------------------------
 // Nemesis
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the active nemesis for a campaign, if any.
- * Only returns nemeses with status = 'active' and tier not 'defeated'.
- */
 export async function getActiveNemesisContext(
   client: Pool | PoolClient,
   campaignId: string
@@ -252,20 +259,17 @@ export interface CampaignSnapshot {
   quests: QuestContext[];
   recentEvents: EventHistoryEntry[];
   nemesis: NemesisContext | null;
+  meta: CampaignMeta | null;
 }
 
-/**
- * One-shot helper that fetches everything the AI DM needs in parallel.
- * Use this when building context for action / movement narration.
- */
 export async function buildCampaignSnapshot(
   client: Pool | PoolClient,
   campaignId: string
 ): Promise<CampaignSnapshot> {
   const locationId = await getCampaignLocationId(client, campaignId);
-
-  const [party, location, npcs, quests, recentEvents, nemesis] =
+  const [meta, party, location, npcs, quests, recentEvents, nemesis] =
     await Promise.all([
+      buildCampaignMeta(client, campaignId),
       getPartyContext(client, campaignId),
       locationId ? getLocationContext(client, locationId) : Promise.resolve(null),
       locationId
@@ -284,5 +288,6 @@ export async function buildCampaignSnapshot(
     quests,
     recentEvents,
     nemesis,
+    meta,
   };
 }

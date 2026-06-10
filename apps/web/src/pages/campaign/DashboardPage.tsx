@@ -16,13 +16,18 @@ import {
   Skull,
   UserCheck,
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Cloud,
+  Sun,
+  Moon,
+  Calendar
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate()
   const {
+    activeCampaign,
     activeRole,
     partyCharacters,
     myCharacter,
@@ -36,6 +41,18 @@ export const DashboardPage: React.FC = () => {
     bountyReputations,
     factions
   } = useCampaign()
+
+  const worldState = activeCampaign?.world_state ?? {}
+  const weather = (worldState.current_weather || worldState.weather || "clear") as string
+  const timeOfDay = (worldState.time_of_day || "morning") as string
+  const campaignDay = Number(worldState.campaign_day || 1)
+
+  const weatherIcon = weather.includes("storm") || weather.includes("rain")
+    ? Cloud
+    : timeOfDay === "night" || timeOfDay === "dusk"
+      ? Moon
+      : Sun
+  const WeatherIcon = weatherIcon
 
   const [chatInput, setChatInput] = useState("")
   const [quickDiceMod, setQuickDiceMod] = useState(0)
@@ -63,6 +80,24 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto game-animate-fade-in">
+
+      {/* World Status HUD */}
+      <div className="flex flex-wrap items-center gap-3 p-3 border border-[var(--game-border)] bg-[var(--obsidian)]/60 rounded-lg">
+        <div className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[var(--parchment)]">
+          <WeatherIcon className="h-4 w-4 text-[var(--runic-gold)]" />
+          <span>{weather.replace(/_/g, " ")}</span>
+        </div>
+        <span className="text-zinc-600">|</span>
+        <div className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[var(--parchment)]">
+          <Sun className="h-4 w-4 text-amber-400" />
+          <span>{timeOfDay.replace(/_/g, " ")}</span>
+        </div>
+        <span className="text-zinc-600">|</span>
+        <div className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[var(--parchment)]">
+          <Calendar className="h-4 w-4 text-[var(--runic-gold)]" />
+          <span>Day {campaignDay}</span>
+        </div>
+      </div>
 
       {/* ── New Player Nudge: show when player has no character yet ── */}
       {activeRole === "player" && !myCharacter && (
@@ -311,8 +346,19 @@ export const DashboardPage: React.FC = () => {
               ) : (
                 eventLogs.map((evt, idx) => {
                   const isSystem = evt.type === "system"
+                  const isWorldEvent = Boolean(
+                    evt.payload && typeof evt.payload === "object" && "world_event" in evt.payload && evt.payload.world_event
+                  )
                   return (
-                    <div key={evt.id || idx} className="text-xs leading-relaxed border-b border-zinc-900 pb-2">
+                    <div
+                      key={evt.id || idx}
+                      className={cn(
+                        "text-xs leading-relaxed border-b pb-2",
+                        isWorldEvent
+                          ? "border-[var(--runic-gold)]/40 bg-amber-950/10 p-2 rounded-md border"
+                          : "border-zinc-900"
+                      )}
+                    >
                       <span className="text-[10px] text-[var(--muted-text)] font-mono block">
                         {new Date(evt.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>

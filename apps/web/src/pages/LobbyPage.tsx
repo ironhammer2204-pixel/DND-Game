@@ -98,11 +98,13 @@ export function LobbyPage() {
     if (!newCampaignName.trim()) return;
     setCreateError(""); setCreateLoading(true);
     try {
-      const data = await apiFetch("/api/campaigns", { method: "POST", body: JSON.stringify({ name: newCampaignName }) });
+      const data = await apiFetch("/api/campaigns", {
+        method: "POST",
+        body: JSON.stringify({ name: newCampaignName, use_setup_wizard: true, tone: "dark" }),
+      });
       closeCreateDialog();
-      // Auto-enter the newly created campaign as DM
-      if (data.campaign) {
-        setActiveCampaign(data.campaign as LobbyCampaign, "dm");
+      if (data.campaign?.id) {
+        window.location.hash = `#/campaigns/${data.campaign.id}/setup`;
       } else {
         void fetchCampaigns();
       }

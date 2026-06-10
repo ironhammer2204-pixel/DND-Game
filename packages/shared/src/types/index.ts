@@ -48,6 +48,36 @@ export interface Skills {
   survival: number;
 }
 
+export interface AbilityScores {
+  strength: number;
+  dexterity: number;
+  constitution: number;
+  intelligence: number;
+  wisdom: number;
+  charisma: number;
+}
+
+export const SKILL_ABILITY_MAP: Record<string, keyof AbilityScores> = {
+  acrobatics: "dexterity",
+  animalHandling: "wisdom",
+  arcana: "intelligence",
+  athletics: "strength",
+  deception: "charisma",
+  history: "intelligence",
+  insight: "wisdom",
+  intimidation: "charisma",
+  investigation: "intelligence",
+  medicine: "wisdom",
+  nature: "intelligence",
+  perception: "wisdom",
+  performance: "charisma",
+  persuasion: "charisma",
+  religion: "intelligence",
+  sleightOfHand: "dexterity",
+  stealth: "dexterity",
+  survival: "wisdom",
+};
+
 export interface Character {
   id: string;
   user_id: string;
@@ -65,6 +95,9 @@ export interface Character {
   reputation: Record<string, number>;
   is_alive: boolean;
   updated_at: string;
+  ability_scores?: AbilityScores;
+  proficiencies?: string[];
+  saving_throw_proficiencies?: (keyof AbilityScores)[];
 }
 
 export interface ItemCatalog {
@@ -709,7 +742,11 @@ export type ServerMessageType =
   | "NEMESIS_AMBUSH"
   | "ENCYCLOPEDIA_KNOWLEDGE_GRANTED"
   | "ERA_CHANGED"
-  | "KNOWLEDGE_GAINED";
+  | "KNOWLEDGE_GAINED"
+  | "WORLD_EXPANDED"
+  | "CAMPAIGN_LAUNCHED"
+  | "WORLD_STATE_UPDATE"
+  | "WORLD_EVENT";
 
 export interface ServerMessageMap {
   GAME_EVENT: {
@@ -736,6 +773,15 @@ export interface ServerMessageMap {
     modifier: number;
     final: number;
     context: string;
+    roll_breakdown?: {
+      raw_rolls?: number[];
+      ability_modifier?: number;
+      proficiency_bonus?: number;
+      dc?: number;
+      success?: boolean;
+      is_crit?: boolean;
+      is_fumble?: boolean;
+    };
   };
   PLAYER_JOINED: {
     user_id: string;
@@ -840,6 +886,33 @@ export interface ServerMessageMap {
     knowledge_level: KnowledgeLevel;
     discovery_source: KnowledgeDiscoverySource;
     entry_title: string;
+  };
+  WORLD_EXPANDED: {
+    campaign_id: string;
+    locations: number;
+    npcs: number;
+    factions: number;
+    quests: number;
+    world_summary: string;
+  };
+  CAMPAIGN_LAUNCHED: {
+    campaign_id: string;
+    opening_narration: string;
+    starting_location: Location | null;
+    active_quests: Quest[];
+    party: Character[];
+  };
+  WORLD_STATE_UPDATE: {
+    weather: string;
+    time_of_day: string;
+    campaign_day: number;
+    weather_effects?: Record<string, unknown>;
+    time_effects?: Record<string, unknown>;
+  };
+  WORLD_EVENT: {
+    event_id: string;
+    text: string;
+    timestamp: string;
   };
 }
 

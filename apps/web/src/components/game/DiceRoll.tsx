@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useEffect } from "react"
 import { useCampaign } from "@/context/CampaignContext"
 import { Dices, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -6,6 +6,12 @@ import { cn } from "@/lib/utils"
 
 export const DiceRoll: React.FC = () => {
   const { activeRoll, dismissActiveRoll } = useCampaign()
+
+  useEffect(() => {
+    if (!activeRoll) return;
+    const timer = setTimeout(() => dismissActiveRoll(), 8000);
+    return () => clearTimeout(timer);
+  }, [activeRoll, dismissActiveRoll]);
 
   if (!activeRoll) return null
 
@@ -66,14 +72,28 @@ export const DiceRoll: React.FC = () => {
             </h4>
 
             {/* Calculations Breakdown */}
-            <div className="flex items-baseline gap-2 mt-1">
+            <div className="flex items-baseline gap-2 mt-1 flex-wrap">
               <span className="text-3xl font-bold font-mono text-[var(--parchment)] tracking-tight">
                 {activeRoll.final}
               </span>
               <span className="text-xs text-[var(--muted-text)] font-mono">
                 ({activeRoll.raw} + {activeRoll.modifier})
               </span>
+              {activeRoll.roll_breakdown?.dc !== undefined && (
+                <span className="text-xs text-gray-500 ml-1">DC {activeRoll.roll_breakdown.dc}</span>
+              )}
+              {activeRoll.roll_breakdown?.success !== undefined && (
+                <span className={`text-xs font-bold ml-1 ${activeRoll.roll_breakdown.success ? "text-green-400" : "text-red-400"}`}>
+                  {activeRoll.roll_breakdown.success ? "SUCCESS" : "FAILURE"}
+                </span>
+              )}
             </div>
+
+            {activeRoll.roll_breakdown?.raw_rolls && activeRoll.roll_breakdown.raw_rolls.length > 1 && (
+              <div className="text-xs text-gray-500 mt-1 font-mono">
+                Rolls: {activeRoll.roll_breakdown.raw_rolls.join(", ")}
+              </div>
+            )}
 
             {/* Runic Formula Type */}
             <div className="flex items-center gap-1.5 mt-2 text-[10px] font-mono text-[var(--runic-gold)] uppercase tracking-wider">

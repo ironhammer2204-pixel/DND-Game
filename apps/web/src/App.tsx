@@ -6,6 +6,7 @@ import { LobbyPage } from "./pages/LobbyPage";
 import { GameRouter } from "./router/gameRouter";
 
 import { AuthCallback } from "./pages/AuthCallback";
+import CampaignSetupPage from "./pages/CampaignSetupPage";
 
 function App() {
   const { token, user } = useAuthStore();
@@ -13,6 +14,11 @@ function App() {
 
   if (window.location.pathname === "/auth/callback") {
     return <AuthCallback />;
+  }
+
+  const hash = window.location.hash;
+  if (hash === "#/campaigns/setup" || /#\/campaigns\/[^/]+\/setup/.test(hash)) {
+    return <CampaignSetupPage />;
   }
 
   if (!token || !user) return <AuthPage />;

@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from "pg";
+import { runRandomEventTick } from "./randomEventEngine.js";
 import { pool } from "../db/client.js";
 import { 
   NPC_TEMPLATES, 
@@ -897,6 +898,7 @@ export async function runWorldHeartbeat(
     await checkNpcSpawns(client, campaignId);
     await checkQuestObjectives(client, campaignId);
     await checkConsequenceArcs(client, campaignId);
+    await runRandomEventTick(client, campaignId);
   } catch (err) {
     console.error("[WorldEngine] Error during world heartbeat tick:", err);
   }

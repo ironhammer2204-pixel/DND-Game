@@ -291,15 +291,11 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCampaign?.id, currentLocationId, locations]);
 
-  // Dice roll visual handling
+  // Dice roll sound (DiceRoll component handles 8s auto-dismiss)
   useEffect(() => {
     if (!activeRoll) return;
     playDiceRollSound();
-    const timer = setTimeout(() => {
-      dismissActiveRoll();
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [activeRoll, dismissActiveRoll]);
+  }, [activeRoll]);
 
   // WebSocket lifecycle management
   useEffect(() => {
@@ -375,9 +371,16 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     ws.send(JSON.stringify({ type: "CHAT_MESSAGE", payload: { text } }));
   };
 
-  const rollDice = (dice: DiceType, modifier: number) => {
-    if (!ws) return;
-    ws.send(JSON.stringify({ type: "DICE_REQUEST", payload: { dice_type: dice, context: "Quick Roll", modifier } }));
+  const rollDice = async (dice: DiceType, modifier: number) => {
+    if (!activeCampaign) return;
+    try {
+      await apiFetch(`/api/campaigns/${activeCampaign.id}/dice/roll`, {
+        method: "POST",
+        body: JSON.stringify({ dice_type: dice, modifier, context: "Quick Roll" }),
+      });
+    } catch (err) {
+      console.error("Dice roll failed:", err);
+    }
   };
 
   const rollAttribute = (attrName: string, score: number) => {

@@ -3,6 +3,16 @@ import { PoolClient } from "pg";
 import { authMiddleware, AuthenticatedRequest } from "../middleware/auth";
 import { pool } from "../db/client";
 import { RoomManager } from "../websocket/roomManager";
+import {
+  expandWorldWithAI,
+  persistWorldExpansion,
+  regenerateElement,
+  WorldExpansionInput,
+} from "../game/worldExpansionEngine";
+import { buildCampaignSnapshot, buildCampaignMeta } from "../ai/contextBuilder";
+import { buildOpeningNarrationPrompt } from "../ai/promptTemplates";
+import { dmService } from "../ai/dmService";
+import { rollDie, broadcastDiceRoll } from "../game/diceEngine";
 
 const router = Router();
 
@@ -134,7 +144,17 @@ async function seedStartingWorld(client: PoolClient, campaignId: string) {
 
 // POST /api/campaigns - Create a new campaign
 router.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  const { name } = req.body;
+  const {
+    name,
+    tone,
+    setting,
+    hook,
+    themes,
+    party_size,
+    starting_level,
+    difficulty,
+    use_setup_wizard,
+  } = req.body;
   const userId = req.user?.sub;
 
   if (!name) {
@@ -145,13 +165,13 @@ router.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  // Start transaction since we insert into both campaigns and campaign_members
+  const setupWizard = Boolean(use_setup_wizard || tone || setting);
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     let inviteCode = generateInviteCode();
-    // Verify uniqueness of invite code
     let codeCheck = await client.query("SELECT 1 FROM public.campaigns WHERE invite_code = $1", [inviteCode]);
     let attempts = 0;
     while (codeCheck.rows.length > 0 && attempts < 5) {
@@ -160,26 +180,76 @@ router.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response
       attempts++;
     }
 
-    // 1. Create campaign
+    const settings = setupWizard
+      ? {
+          tone: tone || "dark",
+          setting: setting || "",
+          hook: hook || "",
+          themes: themes || [],
+          party_size: party_size || 4,
+          starting_level: starting_level || 1,
+          difficulty: difficulty || "standard",
+        }
+      : {};
+
     const campaignRes = await client.query(
-      "INSERT INTO public.campaigns (name, invite_code, owner_id) VALUES ($1, $2, $3) RETURNING *",
-      [name, inviteCode, userId]
+      `INSERT INTO public.campaigns (name, invite_code, owner_id, settings, world_state, status)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        name,
+        inviteCode,
+        userId,
+        JSON.stringify(settings),
+        JSON.stringify(setupWizard ? { setup_phase: true } : {}),
+        setupWizard ? "setup" : "active",
+      ],
     );
     const campaign = campaignRes.rows[0];
 
-    await seedStartingWorld(client, campaign.id);
+    if (setupWizard) {
+      const townRes = await client.query(
+        `INSERT INTO public.locations (campaign_id, name, type, description, state, lore, danger_level)
+         VALUES ($1, 'Starting Settlement', 'village', $2, $3, $4, 'low')
+         RETURNING id`,
+        [
+          campaign.id,
+          "A placeholder settlement until world expansion completes.",
+          JSON.stringify({ discovered: true, is_starting_location: true }),
+          "Temporary starting point for the setup wizard.",
+        ],
+      );
+      await client.query(
+        `UPDATE public.campaigns
+         SET current_location_id = $1,
+             world_state = COALESCE(world_state, '{}'::jsonb) || $2::jsonb
+         WHERE id = $3`,
+        [
+          townRes.rows[0].id,
+          JSON.stringify({
+            starting_location_id: townRes.rows[0].id,
+            discovered_location_ids: [townRes.rows[0].id],
+          }),
+          campaign.id,
+        ],
+      );
+    } else {
+      await seedStartingWorld(client, campaign.id);
+    }
 
-    // 2. Add owner as the DM in campaign_members
     await client.query(
       "INSERT INTO public.campaign_members (campaign_id, user_id, role) VALUES ($1, $2, 'dm')",
-      [campaign.id, userId]
+      [campaign.id, userId],
     );
 
     await client.query("COMMIT");
 
     res.status(201).json({
-      message: "Campaign created successfully",
+      message: setupWizard
+        ? "Campaign created. Proceed to world expansion."
+        : "Campaign created successfully",
       campaign,
+      next_step: setupWizard ? "POST /api/campaigns/:id/expand-world" : undefined,
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -555,6 +625,285 @@ router.patch("/:id/quests/:questId/objective", authMiddleware, async (req: Authe
   } catch (error) {
     console.error("Update quest objective error:", error);
     res.status(500).json({ error: "Internal server error updating quest" });
+  }
+});
+
+router.patch("/:id/settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const { id: campaignId } = req.params;
+  const userId = req.user?.sub;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const membership = await getMembership(campaignId, userId);
+  if (!membership || membership.role !== "dm") {
+    return res.status(403).json({ error: "DM role required" });
+  }
+
+  const { name, ...settingsPatch } = req.body;
+  try {
+    if (name) {
+      await pool.query("UPDATE public.campaigns SET name = $1 WHERE id = $2", [name, campaignId]);
+    }
+    if (Object.keys(settingsPatch).length > 0) {
+      await pool.query(
+        `UPDATE public.campaigns
+         SET settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb
+         WHERE id = $2`,
+        [JSON.stringify(settingsPatch), campaignId],
+      );
+    }
+    const updated = await pool.query("SELECT * FROM public.campaigns WHERE id = $1", [campaignId]);
+    res.json({ campaign: updated.rows[0] });
+  } catch (error) {
+    console.error("Update campaign settings error:", error);
+    res.status(500).json({ error: "Failed to update campaign settings" });
+  }
+});
+
+router.post("/:id/expand-world", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: campaignId } = req.params;
+    const userId = req.user?.sub;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const membership = await getMembership(campaignId, userId);
+    if (!membership || membership.role !== "dm") {
+      return res.status(403).json({ error: "DM role required" });
+    }
+
+    const campaignRes = await pool.query("SELECT settings FROM public.campaigns WHERE id = $1", [campaignId]);
+    if (campaignRes.rows.length === 0) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    const settings = campaignRes.rows[0].settings || {};
+    const input: WorldExpansionInput = {
+      tone: settings.tone || req.body.tone || "dark",
+      setting: settings.setting || req.body.setting || "a dark frontier",
+      hook: settings.hook || req.body.hook || "an ancient evil stirs",
+      themes: settings.themes || req.body.themes || [],
+      party_size: settings.party_size || req.body.party_size || 4,
+      starting_level: settings.starting_level || req.body.starting_level || 1,
+      difficulty: settings.difficulty || req.body.difficulty || "standard",
+      known_npcs: req.body.known_npcs,
+      known_locations: req.body.known_locations,
+      villain_archetype: req.body.villain_archetype,
+      session_zero_notes: req.body.session_zero_notes,
+    };
+
+    const expansionResult = await expandWorldWithAI(input);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const ids = await persistWorldExpansion(client, campaignId, expansionResult, input);
+      await client.query("COMMIT");
+
+      RoomManager.broadcastToRoom(campaignId, "WORLD_EXPANDED", {
+        campaign_id: campaignId,
+        locations: expansionResult.locations.length,
+        npcs: expansionResult.npcs.length,
+        factions: expansionResult.factions.length,
+        quests: expansionResult.quests.length,
+        world_summary: expansionResult.world_summary,
+      });
+
+      res.json({
+        success: true,
+        world_summary: expansionResult.world_summary,
+        opening_narration: expansionResult.opening_narration,
+        locations: expansionResult.locations,
+        npcs: expansionResult.npcs,
+        factions: expansionResult.factions,
+        quests: expansionResult.quests,
+        random_event_seeds: expansionResult.random_event_seeds,
+        nemesis_seed: expansionResult.nemesis_seed,
+        persisted_ids: ids,
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error("[campaigns] expand-world error:", error);
+    res.status(500).json({ error: "World expansion failed" });
+  }
+});
+
+router.post("/:id/regenerate-element", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: campaignId } = req.params;
+    const userId = req.user?.sub;
+    const { element_type, element_index } = req.body;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const membership = await getMembership(campaignId, userId);
+    if (!membership || membership.role !== "dm") {
+      return res.status(403).json({ error: "DM role required" });
+    }
+
+    const campaignRes = await pool.query("SELECT settings FROM public.campaigns WHERE id = $1", [campaignId]);
+    const settings = campaignRes.rows[0]?.settings || {};
+    const input: WorldExpansionInput = {
+      tone: settings.tone || "dark",
+      setting: settings.setting || "",
+      hook: settings.hook || "",
+      themes: settings.themes || [],
+      party_size: settings.party_size || 4,
+      starting_level: settings.starting_level || 1,
+      difficulty: settings.difficulty || "standard",
+    };
+
+    const element = await regenerateElement(pool, campaignId, element_type, element_index, input);
+    res.json({ success: true, element_type, element_index, element });
+  } catch (error) {
+    console.error("[campaigns] regenerate-element error:", error);
+    res.status(500).json({ error: "Regeneration failed" });
+  }
+});
+
+router.post("/:id/launch", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: campaignId } = req.params;
+    const userId = req.user?.sub;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const membership = await getMembership(campaignId, userId);
+    if (!membership || membership.role !== "dm") {
+      return res.status(403).json({ error: "DM role required" });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const locCheck = await client.query(
+        "SELECT 1 FROM public.locations WHERE campaign_id = $1 AND state->>'is_starting_location' = 'true' LIMIT 1",
+        [campaignId],
+      );
+      const questCheck = await client.query(
+        "SELECT 1 FROM public.quests WHERE campaign_id = $1 AND status = 'active' LIMIT 1",
+        [campaignId],
+      );
+      const npcCheck = await client.query(
+        "SELECT 1 FROM public.npcs WHERE campaign_id = $1 AND is_alive = true LIMIT 1",
+        [campaignId],
+      );
+
+      if (locCheck.rows.length === 0 || questCheck.rows.length === 0 || npcCheck.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "World not ready. Call expand-world first." });
+      }
+
+      let openingNarration = "";
+      const meta = await buildCampaignMeta(client, campaignId);
+      const snapshot = await buildCampaignSnapshot(client, campaignId);
+
+      if (dmService.isEnabled() && meta) {
+        try {
+          const prompt = buildOpeningNarrationPrompt({
+            campaign_name: meta.name,
+            world_summary: meta.world_summary,
+            opening_narration: meta.opening_narration,
+            party: snapshot.party,
+            starting_location: snapshot.location || { name: "unknown", description: "" },
+            active_quests: snapshot.quests,
+          });
+          openingNarration = await dmService.generateSessionSummary(prompt);
+        } catch {
+          openingNarration = meta.opening_narration;
+        }
+      } else {
+        openingNarration = meta?.opening_narration || "The adventure begins...";
+      }
+
+      await client.query(
+        `UPDATE public.campaigns
+         SET status = 'active', world_state = COALESCE(world_state, '{}'::jsonb) || $1::jsonb
+         WHERE id = $2`,
+        [JSON.stringify({ launched_at: new Date().toISOString(), opening_narration: openingNarration }), campaignId],
+      );
+
+      await client.query("COMMIT");
+
+      const [startingLocRes, questsRes, partyRes] = await Promise.all([
+        client.query(
+          `SELECT * FROM public.locations
+           WHERE campaign_id = $1 AND state->>'is_starting_location' = 'true'
+           LIMIT 1`,
+          [campaignId],
+        ),
+        client.query(
+          "SELECT * FROM public.quests WHERE campaign_id = $1 AND status = 'active'",
+          [campaignId],
+        ),
+        client.query("SELECT * FROM public.characters WHERE campaign_id = $1", [campaignId]),
+      ]);
+
+      RoomManager.broadcastToRoom(campaignId, "CAMPAIGN_LAUNCHED", {
+        campaign_id: campaignId,
+        opening_narration: openingNarration,
+        starting_location: startingLocRes.rows[0] ?? null,
+        active_quests: questsRes.rows,
+        party: partyRes.rows,
+      });
+
+      res.json({ success: true, opening_narration: openingNarration, campaign_id: campaignId, status: "active" });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error("[campaigns] launch error:", error);
+    res.status(500).json({ error: "Campaign launch failed" });
+  }
+});
+
+router.post("/:id/dice/roll", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id: campaignId } = req.params;
+    const userId = req.user?.sub;
+    const { dice_type, modifier = 0, context = "Quick Roll" } = req.body;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const membership = await getMembership(campaignId, userId);
+    if (!membership) return res.status(403).json({ error: "Not a member of this campaign" });
+
+    const validDice = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"];
+    if (!validDice.includes(dice_type)) {
+      return res.status(400).json({ error: `Invalid dice type. Use: ${validDice.join(", ")}` });
+    }
+
+    const sides = parseInt(String(dice_type).replace("d", ""), 10);
+    const raw = rollDie(sides);
+    const final = raw + Number(modifier);
+
+    const charRes = await pool.query(
+      `SELECT c.name, c.id FROM public.characters c
+       JOIN public.campaign_members cm ON cm.character_id = c.id
+       WHERE cm.campaign_id = $1 AND cm.user_id = $2 LIMIT 1`,
+      [campaignId, userId],
+    );
+    const rollerName = charRes.rows[0]?.name || req.user?.user_metadata?.username || "Unknown";
+
+    broadcastDiceRoll(campaignId, {
+      dice_type,
+      raw,
+      modifier: Number(modifier),
+      final,
+      roller_name: rollerName,
+      context,
+      campaign_id: campaignId,
+      character_id: charRes.rows[0]?.id,
+      roll_breakdown: { raw_rolls: [raw] },
+    });
+
+    res.json({ raw, modifier: Number(modifier), final, dice_type, context });
+  } catch (error) {
+    console.error("[campaigns] dice roll error:", error);
+    res.status(500).json({ error: "Dice roll failed" });
   }
 });
 
