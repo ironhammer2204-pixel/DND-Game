@@ -84,6 +84,7 @@ interface CampaignContextValue {
   createCharacter: (name: string, race: string, class_: string) => Promise<void>;
   dismissActiveRoll: () => void;
   setActiveCampaign: (campaign: LobbyCampaign | null, role: "player" | "dm" | null) => void;
+  fetchNemeses: (campaignId: string) => Promise<void>;
 
   // Derived combat & stats
   derivedAc: number;
@@ -553,7 +554,8 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         dropInventoryItem, handleCopyInvite, createCharacter,
         dismissActiveRoll, setActiveCampaign, activeCombat,
         derivedAc, attackBonus, spellSaveDc, proficiencyBonus,
-        dexModifier, strModifier, spellcastingModifier, bountyReputations
+        dexModifier, strModifier, spellcastingModifier, bountyReputations,
+        fetchNemeses
       }}
     >
       {children}

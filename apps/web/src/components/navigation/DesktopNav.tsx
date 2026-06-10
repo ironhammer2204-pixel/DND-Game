@@ -9,7 +9,8 @@ import {
   Settings, 
   Users2, 
   Scale, 
-  Crown 
+  Crown,
+  HelpCircle
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +22,7 @@ export const DesktopNav: React.FC = () => {
     { to: "combat", label: "Combat", icon: Swords },
     { to: "character", label: "Character", icon: User },
     { to: "journal", label: "Journal", icon: BookOpen },
+    { to: "tutorial", label: "How to Play", icon: HelpCircle },
   ]
 
   const dmLinks = [

@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useCampaign } from "@/context/CampaignContext"
 import { RACES, CLASSES, type Character } from "@dnd/shared"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -16,7 +17,8 @@ import {
   Trash2, 
   Dices,
   PlusCircle,
-  FolderHeart
+  FolderHeart,
+  ArrowLeft
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -37,6 +39,7 @@ const CLASS_STARTING_STATS: Record<string, { attributes: Record<string, number>;
 }
 
 export const CharacterSheetPage: React.FC = () => {
+  const navigate = useNavigate()
   const {
     myCharacter,
     inventory,
@@ -188,6 +191,20 @@ export const CharacterSheetPage: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto game-animate-fade-in">
+
+      {/* Back Button Header */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate("../dashboard")}
+          className="h-8 w-8 shrink-0 text-[var(--muted-text)] hover:text-[var(--parchment)] cursor-pointer"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-xs text-[var(--muted-text)] font-mono uppercase tracking-wider">Character Sheet</span>
+      </div>
       
       {/* ASI Points Alert Banner */}
       {availableAsiPoints > 0 && !activeCombat && (

@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+ import { useNavigate } from "react-router-dom"
 import { useCampaign } from "@/context/CampaignContext"
 import { useAuthStore } from "@/stores/authStore"
 import { EncyclopediaPanel } from "@/components/EncyclopediaPanel"
@@ -6,15 +7,18 @@ import { NemesisGallery } from "@/components/NemesisGallery"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { 
   BookOpen, 
   Skull, 
   Compass, 
-  BookMarked
+  BookMarked,
+  ArrowLeft
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const JournalPage: React.FC = () => {
+  const navigate = useNavigate()
   const {
     activeCampaign,
     activeRole,
@@ -23,7 +27,8 @@ export const JournalPage: React.FC = () => {
     factions,
     questsError,
     toggleQuestObjective,
-    myCharacter
+    myCharacter,
+    fetchNemeses
   } = useCampaign()
 
   const { token } = useAuthStore()
@@ -37,6 +42,15 @@ export const JournalPage: React.FC = () => {
       
       {/* Page Title */}
       <div className="flex items-center gap-3 border-b border-[var(--game-border)] pb-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate("../dashboard")}
+          className="h-8 w-8 shrink-0 text-[var(--muted-text)] hover:text-[var(--parchment)] cursor-pointer"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         <BookMarked className="h-6 w-6 text-[var(--runic-gold)]" />
         <div>
           <h2 className="text-xl font-serif font-bold text-[var(--parchment)]">
@@ -182,7 +196,7 @@ export const JournalPage: React.FC = () => {
                 nemeses={nemeses}
                 factions={factions}
                 isDM={activeRole === "dm"}
-                onUpdate={() => {}}
+                onUpdate={() => void fetchNemeses(activeCampaign.id)}
               />
             )}
           </Card>

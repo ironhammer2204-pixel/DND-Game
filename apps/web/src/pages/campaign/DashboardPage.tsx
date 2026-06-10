@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useCampaign } from "@/context/CampaignContext"
 import { HpBar } from "@/components/game/HpBar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -13,11 +14,14 @@ import {
   Users, 
   Dice2,
   Skull,
-  UserCheck
+  UserCheck,
+  Sparkles,
+  HelpCircle
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const DashboardPage: React.FC = () => {
+  const navigate = useNavigate()
   const {
     activeRole,
     partyCharacters,
@@ -59,6 +63,33 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto game-animate-fade-in">
+
+      {/* ── New Player Nudge: show when player has no character yet ── */}
+      {activeRole === "player" && !myCharacter && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border border-[var(--runic-gold)] bg-amber-950/15 rounded-lg shadow-md">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-[var(--runic-gold)] animate-pulse shrink-0" />
+            <div className="text-xs">
+              <span className="font-bold text-[var(--runic-gold)] uppercase tracking-wider block">
+                You haven't created your adventurer yet!
+              </span>
+              <span className="text-zinc-300">
+                Head to the Character Sheet to forge your hero — choose a race, class, and name.
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => navigate("../tutorial")} className="text-xs cursor-pointer">
+              <HelpCircle className="h-3.5 w-3.5 mr-1.5" />
+              How to Play
+            </Button>
+            <Button size="sm" onClick={() => navigate("../character")} className="text-xs cursor-pointer">
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              Create Character →
+            </Button>
+          </div>
+        </div>
+      )}
       {/* Bounty Alerts Banner */}
       {bountyReputations.map((rep) => {
         const faction = factions.find((f) => f.id === rep.faction_id)

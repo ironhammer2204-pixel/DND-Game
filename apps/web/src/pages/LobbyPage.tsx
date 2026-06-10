@@ -98,9 +98,14 @@ export function LobbyPage() {
     if (!newCampaignName.trim()) return;
     setCreateError(""); setCreateLoading(true);
     try {
-      await apiFetch("/api/campaigns", { method: "POST", body: JSON.stringify({ name: newCampaignName }) });
+      const data = await apiFetch("/api/campaigns", { method: "POST", body: JSON.stringify({ name: newCampaignName }) });
       closeCreateDialog();
-      void fetchCampaigns();
+      // Auto-enter the newly created campaign as DM
+      if (data.campaign) {
+        setActiveCampaign(data.campaign as LobbyCampaign, "dm");
+      } else {
+        void fetchCampaigns();
+      }
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create campaign");
     } finally {

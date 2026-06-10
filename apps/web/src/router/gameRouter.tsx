@@ -10,6 +10,7 @@ import { JournalPage } from "@/pages/campaign/JournalPage"
 import { MenuPage } from "@/pages/campaign/MenuPage"
 import { FactionsPage } from "@/pages/campaign/FactionsPage"
 import { BalancePage } from "@/pages/campaign/BalancePage"
+import { TutorialPage } from "@/pages/campaign/TutorialPage"
 
 export const GameRouter: React.FC = () => {
   return (
@@ -61,6 +62,9 @@ export const GameRouter: React.FC = () => {
               } 
             />
             
+            {/* Tutorial / How to Play */}
+            <Route path="tutorial" element={<TutorialPage />} />
+
             {/* Fallback route */}
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Route>

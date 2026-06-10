@@ -1,4 +1,5 @@
 import React from "react"
+import { useNavigate } from "react-router-dom"
 import { useCampaign } from "@/context/CampaignContext"
 import { useAuthStore } from "@/stores/authStore"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,11 +11,13 @@ import {
   CornerUpLeft, 
   Copy, 
   Check, 
-  UserCircle 
+  UserCircle,
+  ArrowLeft
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const MenuPage: React.FC = () => {
+  const navigate = useNavigate()
   const {
     activeCampaign,
     activeRole,
@@ -35,6 +38,15 @@ export const MenuPage: React.FC = () => {
       
       {/* Title */}
       <div className="flex items-center gap-3 border-b border-[var(--game-border)] pb-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate("../dashboard")}
+          className="h-8 w-8 shrink-0 text-[var(--muted-text)] hover:text-[var(--parchment)] cursor-pointer"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         <Settings className="h-6 w-6 text-[var(--runic-gold)]" />
         <div>
           <h2 className="text-xl font-serif font-bold text-[var(--parchment)]">

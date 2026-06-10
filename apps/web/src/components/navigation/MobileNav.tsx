@@ -5,7 +5,8 @@ import {
   Swords, 
   User, 
   BookOpen, 
-  Settings 
+  Settings,
+  HelpCircle
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -16,6 +17,7 @@ export const MobileNav: React.FC = () => {
     { to: "combat", label: "Combat", icon: Swords },
     { to: "character", label: "Sheet", icon: User },
     { to: "journal", label: "Journal", icon: BookOpen },
+    { to: "tutorial", label: "Help", icon: HelpCircle },
     { to: "menu", label: "Menu", icon: Settings },
   ]
 

@@ -61,9 +61,23 @@ router.get("/:id/encyclopedia", authMiddleware, async (req: AuthenticatedRequest
     }
 
     const characterId = await getCharacterId(campaignId, userId);
-    if (!characterId) return res.json({ entries: [] });
 
-    const entries = await getEncyclopediaForCharacter(pool, campaignId, characterId, category);
+    const entries = characterId
+      ? await getEncyclopediaForCharacter(pool, campaignId, characterId, category)
+      : [];
+
+    // Fallback: if no character knowledge entries found, show all public (non-secret) entries
+    // This ensures new campaigns with seeded data don't appear empty to players
+    if (entries.length === 0 && !dm) {
+      const fallback = await pool.query(
+        `SELECT * FROM public.encyclopedia_entries
+         WHERE campaign_id = $1 AND is_secret = false ${category ? "AND category = $2" : ""}
+         ORDER BY pinned DESC, importance DESC`,
+        category ? [campaignId, category] : [campaignId]
+      );
+      return res.json({ entries: fallback.rows });
+    }
+
     return res.json({ entries });
   } catch (err) {
     console.error("[encyclopedia] GET /encyclopedia:", err);

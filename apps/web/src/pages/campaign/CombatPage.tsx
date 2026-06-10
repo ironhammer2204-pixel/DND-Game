@@ -1,4 +1,5 @@
 import React, { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useCampaign } from "@/context/CampaignContext"
 import { ConditionChip } from "@/components/game/ConditionChip"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -10,11 +11,13 @@ import {
   ShieldAlert, 
   Timer, 
   Play, 
-  Skull
+  Skull,
+  ArrowLeft
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const CombatPage: React.FC = () => {
+  const navigate = useNavigate()
   const {
     activeCombat,
     activeRole,
@@ -61,6 +64,19 @@ export const CombatPage: React.FC = () => {
   if (!activeCombat) {
     return (
       <div className="p-6 max-w-xl mx-auto space-y-6 game-animate-fade-in">
+        {/* Back Button */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("../dashboard")}
+            className="h-8 w-8 shrink-0 text-[var(--muted-text)] hover:text-[var(--parchment)] cursor-pointer"
+            title="Back to Dashboard"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-[var(--muted-text)] font-mono uppercase tracking-wider">Combat Arena</span>
+        </div>
         <Card className="border-[var(--game-border)] bg-[var(--game-card)]">
           <CardHeader className="text-center pb-4 border-b border-[var(--game-border)]/50">
             <div className="mx-auto w-12 h-12 rounded-full border border-[var(--game-border)] flex items-center justify-center bg-[var(--obsidian)] mb-3">
@@ -142,6 +158,20 @@ export const CombatPage: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto game-animate-fade-in">
+      
+      {/* Back Button */}
+      <div className="flex items-center gap-2 mb-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate("../dashboard")}
+          className="h-8 w-8 shrink-0 text-[var(--muted-text)] hover:text-[var(--parchment)] cursor-pointer"
+          title="Back to Dashboard"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-xs text-[var(--muted-text)] font-mono uppercase tracking-wider">← Dashboard</span>
+      </div>
       
       {/* Combat status header */}
       <div className="flex flex-wrap justify-between items-center gap-4 bg-[var(--game-card)] border border-[var(--game-border)] p-4 rounded-lg shadow-md">
